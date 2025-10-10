@@ -4,7 +4,7 @@ class NumberUtility {
     String _words = "";
     String _result = "";
     if (!_ifullNumber(number)) return "";
-    if (number == null || number == "") {
+    if (number.isEmpty) {
       return '';
     }
     switch (lang) {
@@ -21,9 +21,6 @@ class NumberUtility {
 
   ///string is numeric or not
   static bool isNumeric(String s) {
-    if (s == null) {
-      return false;
-    }
     return double.tryParse(s) != null;
   }
 
@@ -50,14 +47,14 @@ class NumberUtility {
     if (toDigit == NumStrLanguage.English) {
       for (var i = 0; i < 10; i++) {
         number = number
-            .replaceAll(new RegExp(persianNumbers[i]), enNumbers[i])
-            .replaceAll(new RegExp(arabicNumbers[i]), enNumbers[i]);
+            .replaceAll(RegExp(persianNumbers[i]), enNumbers[i])
+            .replaceAll(RegExp(arabicNumbers[i]), enNumbers[i]);
       }
     } else {
       for (var i = 0; i < 10; i++) {
         number = number
-            .replaceAll(new RegExp(enNumbers[i]), persianNumbers[i])
-            .replaceAll(new RegExp(enNumbers[i]), arabicNumbers[i]);
+            .replaceAll(RegExp(enNumbers[i]), persianNumbers[i])
+            .replaceAll(RegExp(enNumbers[i]), arabicNumbers[i]);
       }
     }
     return number;
@@ -66,7 +63,7 @@ class NumberUtility {
   ///extract number from string; abc123456789xyz to ۱۲۳۴۵۶۷۸۹  Or  ابپ۱۲۳۴۵۶۷۸۹ن to 123456789
   static String extractNumber(String inputString, NumStrLanguage toDigit) {
     String number = "";
-    number = inputString.replaceAll(new RegExp(r'[^0-9]'), ''); // '23'
+    number = inputString.replaceAll(RegExp(r'[^0-9]'), ''); // '23'
     return changeDigit(number, toDigit);
   }
 }
@@ -74,9 +71,6 @@ class NumberUtility {
 enum NumStrLanguage { Farsi, English }
 
 bool _ifullNumber(String s) {
-  if (s == null) {
-    return false;
-  }
   return double.tryParse(s) != null;
 }
 

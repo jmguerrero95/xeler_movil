@@ -1,6 +1,5 @@
 import 'dart:convert';
 
-import 'package:fancy_bottom_navigation/fancy_bottom_navigation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -9,104 +8,109 @@ import 'package:xeler_impresora/paginas/Clientes.dart';
 import 'package:xeler_impresora/paginas/Configuracion.dart';
 import 'package:xeler_impresora/paginas/Home.dart';
 import 'package:xeler_impresora/paginas/Resumen.dart';
-//import 'package:xeler_impresora/paginas/Seleccion.dart';
-
-import 'Login.dart';
-
-const TextStyle whiteBoldText = TextStyle(
-  fontWeight: FontWeight.bold,
-  color: Colors.black,
-);
-
-int _index = 0;
-final List<Widget> _pages = [
-  HomePage(),
-  ClientesPage(),
-  ResumenPage(),
-  ConfiguracionPage(),
-];
-
-
+import 'package:xeler_impresora/paginas/Login.dart';
 
 class Inicio extends StatefulWidget {
-  
+  const Inicio({super.key});
+
   @override
-  _HomeState createState() => _HomeState();
+  State<Inicio> createState() => _InicioState();
 }
 
-class _HomeState extends State<Inicio> {
-  final TextStyle whiteText = TextStyle(
-    color: Colors.white,
-  );
-  final TextStyle greyTExt = TextStyle(
-    color: Colors.grey.shade400,
-  );
-  var userData;
-  int currentPage = 0;
-  
-  GlobalKey bottomNavigationKey = GlobalKey();
+class _InicioState extends State<Inicio> {
+  final List<Widget> _pages = const [
+    HomePage(),
+    ClientesPage(),
+    ResumenPage(),
+    ConfiguracionPage(),
+  ];
+
+  int _index = 0;
+  Map<String, dynamic>? userData;
 
   @override
   void initState() {
-    _getUserInfo();
-    
     super.initState();
-    SystemChrome.setPreferredOrientations([
+    _getUserInfo();
+    SystemChrome.setPreferredOrientations(const [
       DeviceOrientation.portraitUp,
       DeviceOrientation.portraitDown,
-  ]);
+    ]);
   }
 
-  void _getUserInfo() async {
-      SharedPreferences localStorage = await SharedPreferences.getInstance();
-      var userJson = localStorage.getString('user'); 
-      var user = json.decode(userJson);
+  @override
+  void dispose() {
+    SystemChrome.setPreferredOrientations(DeviceOrientation.values);
+    super.dispose();
+  }
+
+  Future<void> _getUserInfo() async {
+    final localStorage = await SharedPreferences.getInstance();
+    final userJson = localStorage.getString('user');
+    if (userJson == null) {
+      if (!mounted) return;
       setState(() {
-        userData = user;
+        userData = null;
       });
+      return;
+    }
 
+    final user = jsonDecode(userJson) as Map<String, dynamic>;
+    if (!mounted) return;
+    setState(() {
+      userData = user;
+    });
   }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: _pages[_index],
-      bottomNavigationBar: FancyBottomNavigation(
-        tabs: [
-          TabData(
-              iconData: Icons.home,
-              title: "Inicio"),
-          TabData(
-              iconData: Icons.supervisor_account,
-              title: "Clientes"),
-          TabData(
-              iconData: Icons.monetization_on,
-              title: "Resumen"),
-          TabData(
-             iconData: Icons.settings,
-             title: "Configuración")
-        ],
-        onTabChangedListener: (position){
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: _index,
+        type: BottomNavigationBarType.fixed,
+        selectedItemColor: const Color.fromARGB(255, 36, 38, 80),
+        unselectedItemColor: Colors.grey.shade600,
+        onTap: (position) {
           setState(() {
             _index = position;
           });
         },
+        items: const [
+          BottomNavigationBarItem(
+            icon: Icon(Icons.home),
+            label: 'Inicio',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.supervisor_account),
+            label: 'Clientes',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.monetization_on),
+            label: 'Resumen',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.settings),
+            label: 'Configuración',
+          ),
+        ],
       ),
     );
   }
 
-  void logout() async{
-      // logout from the server ... 
-      var res = await CallApi().getData('logout');
-      var body = json.decode(res.body);
-      if(body['success']){
-         SharedPreferences localStorage = await SharedPreferences.getInstance();
-         localStorage.remove('user');
-         localStorage.remove('token');
-          Navigator.push(
-        context,
-        new MaterialPageRoute(
-            builder: (context) => LogIn()));
-      }
+  Future<void> logout() async {
+    final res = await CallApi().getData('logout');
+    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    if (body['success'] == true) {
+      final localStorage = await SharedPreferences.getInstance();
+      await localStorage.remove('user');
+      await localStorage.remove('token');
+      if (!mounted) return;
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute<void>(
+          builder: (context) => const LogIn(),
+        ),
+      );
+    }
   }
-
 }
