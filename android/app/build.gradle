@@ -31,7 +31,7 @@ android {
 
     defaultConfig {
         applicationId "com.example.xeler_impresora"
-        minSdk 21
+        minSdkVersion flutter.minSdkVersion
         targetSdk flutter.targetSdkVersion
         versionCode flutterVersionCode.toInteger()
         versionName flutterVersionName
