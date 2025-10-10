@@ -6,7 +6,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:charset_converter/charset_converter.dart';
-import 'package:esc_pos_utils_plus/esc_pos_utils.dart';
+import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
 import 'package:image/image.dart' as img;
 import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
 
@@ -71,7 +71,12 @@ class BlueThermalPrinter {
 
   Future<void> disconnect() async {
     try {
-      await PrintBluetoothThermal.disconnect();
+      final dynamic disconnectMember = PrintBluetoothThermal.disconnect;
+      if (disconnectMember is Future) {
+        await disconnectMember;
+      } else if (disconnectMember is Future<bool> Function()) {
+        await disconnectMember();
+      }
     } finally {
       _stateController.add(DISCONNECTED);
     }
@@ -150,7 +155,7 @@ class BlueThermalPrinter {
   }
 
   Future<void> dispose() async {
-    await _stateTimer?.cancel();
+    _stateTimer?.cancel();
     await _stateController.close();
   }
 
