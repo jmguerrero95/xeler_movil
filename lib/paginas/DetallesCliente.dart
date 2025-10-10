@@ -206,12 +206,12 @@ class _DetallesClienteState extends State<DetallesCliente> {
                                           ),
                                         ],
                                       ),
-                                      onTap: () {
+                                      onTap: () async {
                                         final direccion = userData?['direccion']?.toString() ??
                                             userData?['address']?.toString();
                                         final imagePath = pathImage;
                                         if (direccion != null && imagePath != null) {
-                                          testPrint.sample2(
+                                          await testPrint.sample2(
                                             imagePath,
                                             direccion,
                                             factura.id.toString(),

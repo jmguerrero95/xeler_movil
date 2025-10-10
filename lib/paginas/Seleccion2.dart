@@ -207,7 +207,7 @@ class _SeleccionPage2State extends State<SeleccionPage2> {
                   Icons.print,
                   color: Colors.grey.shade400,
                 ),
-                onTap: () {
+                onTap: () async {
                   if (_connected) {
                     final direccion =
                         userData?['direccion']?.toString() ??
@@ -215,7 +215,7 @@ class _SeleccionPage2State extends State<SeleccionPage2> {
                         '';
                     final imagePath = pathImage;
                     if (imagePath != null) {
-                      testPrint.sample(imagePath, direccion);
+                      await testPrint.sample(imagePath, direccion);
                     }
                   } else {
                     _showMessage('Ningún dispositivo conectado');
