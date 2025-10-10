@@ -9,333 +9,306 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:xeler_impresora/api/api.dart';
 import 'package:xeler_impresora/paginas/testprint.dart';
-//import 'package:plugin_device_information/plugin_device_information.dart';
 
 class SeleccionPage2 extends StatefulWidget {
+  const SeleccionPage2({super.key});
+
   @override
-  _SeleccionPage2State createState() => _SeleccionPage2State();
+  State<SeleccionPage2> createState() => _SeleccionPage2State();
 }
 
 class _SeleccionPage2State extends State<SeleccionPage2> {
-  
-  BlueThermalPrinter bluetooth = BlueThermalPrinter.instance;
+  final BlueThermalPrinter bluetooth = BlueThermalPrinter.instance;
+  final TestPrint testPrint = TestPrint();
+
   List<BluetoothDevice> _devices = [];
-  BluetoothDevice _device;
+  BluetoothDevice? _device;
   bool _connected = false;
-  bool _conectada = false;
-  var userData;
-  //var stringValue;
-  String _dispositivo;
-  String _direccion;
-  int _tipo;
-  String pathImage;
-  TestPrint testPrint;
-  final TextStyle whiteText = TextStyle(
-    color: Colors.white,
-  );
-  final TextStyle greyTExt = TextStyle(
-    color: Colors.grey.shade400,
-  );
-  final TextStyle whiteBoldText = TextStyle(
-  fontWeight: FontWeight.bold,
-  color: Colors.black,
-);
-  
+  Map<String, dynamic>? userData;
+  String? _dispositivo;
+  String? _direccion;
+  int? _tipo;
+  String? pathImage;
 
   @override
   void initState() {
     super.initState();
     initPlatformState();
     initSavetoPath();
-   // _getUserInfo();
-    //laImpresora();
-    testPrint= TestPrint();
+    _getUserInfo();
   }
 
-  initSavetoPath() async {
-    final filename = '192xeler.png';
-    var bytes = await rootBundle.load("assets/images/192xeler.png");
-    String dir = (await getApplicationDocumentsDirectory()).path;
-    writeToFile(bytes,'$dir/$filename');
-    setState(() {
-      pathImage='$dir/$filename';
-    });
+  Future<void> initSavetoPath() async {
+    const filename = '192xeler.png';
+    final bytes = await rootBundle.load('assets/images/192xeler.png');
+    final dir = (await getApplicationDocumentsDirectory()).path;
+    final fullPath = '$dir/$filename';
+    await writeToFile(bytes, fullPath);
+    if (mounted) {
+      setState(() {
+        pathImage = fullPath;
+      });
+    }
   }
-
 
   Future<void> initPlatformState() async {
-    
-    bool isConnected=await bluetooth.isConnected;
-    print(isConnected);
+    final isConnected = await bluetooth.isConnected;
     List<BluetoothDevice> devices = [];
     try {
       devices = await bluetooth.getBondedDevices();
     } on PlatformException {
-      //platformVersion = 'Error recuperando version.';
+      devices = [];
     }
 
     bluetooth.onStateChanged().listen((state) {
+      if (!mounted) return;
       switch (state) {
-        case 1:
+        case BlueThermalPrinter.CONNECTED:
           setState(() {
             _connected = true;
           });
           break;
-        case 0:
+        case BlueThermalPrinter.DISCONNECTED:
           setState(() {
             _connected = false;
           });
           break;
-        /* default:
-          print(state);
-          break; */
+        default:
+          break;
       }
     });
 
     if (!mounted) return;
     setState(() {
       _devices = devices;
-      //_platformVersion = platformVersion;
+      _connected = isConnected == true;
     });
+  }
 
-    if(isConnected) {
+  Future<void> _getUserInfo() async {
+    final localStorage = await SharedPreferences.getInstance();
+    final userJson = localStorage.getString('user');
+    if (userJson == null) {
+      if (!mounted) return;
       setState(() {
-        _connected=true;
+        userData = null;
       });
+      return;
     }
+    final user = jsonDecode(userJson) as Map<String, dynamic>;
+    if (!mounted) return;
+    setState(() {
+      userData = user;
+      _dispositivo = user['dispositivo']?.toString();
+      _direccion =
+          (user['address'] ?? user['direccion'])?.toString();
+      final tipoValue = user['tipo'];
+      _tipo = tipoValue is int ? tipoValue : int.tryParse('$tipoValue');
+    });
   }
 
-
-  void _getUserInfo() async {
-      SharedPreferences localStorage = await SharedPreferences.getInstance();
-      var userJson = localStorage.getString('user'); 
-      var user = json.decode(userJson);
-      var stringValue = user['dispositivo'].toString();
-      print(stringValue);
-      if(stringValue != null){
-        setState(() => {
-            userData = user,
-        //  _connected=true,
-          _dispositivo = stringValue
-        });
-        /* setState(() {
-          userData = user;
-          _connected=true;
-          _dispositivo = stringValue;
-        }); */
-
-        //initPlatformState();
-      }
-
-      
-
-  }
-
-  void _guardarImpresora() async{
-    var data = {
-        'dispositivo' : _dispositivo,
-        'tipo': _tipo,
-        'address': _direccion 
+  Future<void> _guardarImpresora() async {
+    if (_dispositivo == null || _direccion == null || _tipo == null) {
+      return;
+    }
+    final data = {
+      'dispositivo': _dispositivo,
+      'tipo': _tipo,
+      'address': _direccion,
+      'direccion': _direccion,
     };
 
-    var res = await CallApi().postData(data, 'guardarImpresora');
-    var body = json.decode(res.body);
-    //print(body);
-    if(body['success']){
-      SharedPreferences localStorage = await SharedPreferences.getInstance();
-      localStorage.setString('user', json.encode(body['user']));
+    final res = await CallApi().postData(data, 'guardarImpresora');
+    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    if (body['success'] == true) {
+      final localStorage = await SharedPreferences.getInstance();
+      await localStorage.setString('user', jsonEncode(body['user']));
     }
-
-  /* 
-  
-    dispositivo: MHT-P28A, tipo: 0, address: DC:0D:30:A2:60:21
-   */
   }
-
-  /* void laImpresora() async {
-    final myDevice = BluetoothDevice.fromMap({
-      'name': _dispositivo,
-      'address': _direccion,
-      'type': _tipo
-    });
-    
-  } */
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-        appBar: AppBar(
-          title: Text('Seleccion'),
-        ),
-        body: Container(
-          child: Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: ListView(
+      appBar: AppBar(
+        title: const Text('Seleccion'),
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(8.0),
+        child: ListView(
+          children: <Widget>[
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              mainAxisAlignment: MainAxisAlignment.start,
               children: <Widget>[
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  mainAxisAlignment: MainAxisAlignment.start,
-                  children: <Widget>[
-                    SizedBox(width: 4,),
-                    Text(
-                      'Dis:',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    SizedBox(width: 15,),
-
-                    Expanded(
-                      child: !_connected ? 
-                        DropdownButton(
-                        items: _getDeviceItems(),
-                        hint: new Text("Selecciona un dispositivo"),
-                        value: _device,
-                        //value: dispositivo,
-                        onChanged: (value) {
-                          setState(() => {
-                                _device = value,
-                                _dispositivo = value.name,
-                                _direccion = value.address,
-                                _tipo = value.type
-                                
+                const SizedBox(width: 4),
+                const Text(
+                  'Dis:',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(width: 15),
+                Expanded(
+                  child: !_connected
+                      ? DropdownButton<BluetoothDevice?>(
+                          isExpanded: true,
+                          items: _getDeviceItems(),
+                          hint: const Text('Selecciona un dispositivo'),
+                          value: _device,
+                          onChanged: (value) {
+                            setState(() {
+                              _device = value;
+                              _dispositivo = value?.name;
+                              _direccion = value?.address;
+                              _tipo = value?.type;
                             });
-                            
-                        },
-                        //value: _selectedText,
-                      ) 
+                          },
+                        )
                       : Center(
-        child: Text(_dispositivo.toString(),
-                style: TextStyle(fontSize: 18.0)
-                  )
-              ),
-                    ),
-                  ],
+                          child: Text(
+                            _dispositivo ?? 'Sin dispositivo',
+                            style: const TextStyle(fontSize: 18.0),
+                          ),
+                        ),
                 ),
-                SizedBox(height: 10,),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: <Widget>[
-                    RaisedButton(
-                      color: Colors.brown,
-                      onPressed:(){
-                        initPlatformState();
-                      },
-                      child: Text('Actualizar', style: TextStyle(color: Colors.white),),
-                    ),
-                    SizedBox(width: 20,),
-                    RaisedButton(
-                      color: _connected ? Colors.red:Colors.green,
-                      onPressed:
-                      _connected ? _disconnect : _connect,
-                      child: Text(_connected ? 'Desconectar' : 'Conectar', style: TextStyle(color: Colors.white),),
-                    ),
-                  ],
+              ],
+            ),
+            const SizedBox(height: 10),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: <Widget>[
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.brown),
+                  onPressed: initPlatformState,
+                  child: const Text('Actualizar', style: TextStyle(color: Colors.white)),
                 ),
-                Column(
-                  children: <Widget>[
-                    
-                Padding(
-                  padding: EdgeInsets.fromLTRB(0.0, 35.0, 0.0, 0.0), 
-                  child: ListTile(
-                  title: Text(
-                    "Imprimir Prueba",
-                    style: whiteBoldText,
+                const SizedBox(width: 20),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _connected ? Colors.red : Colors.green,
                   ),
-                  trailing: Icon(
-                    Icons.print,
-                    color: Colors.grey.shade400,
+                  onPressed: _connected ? _disconnect : _connect,
+                  child: Text(
+                    _connected ? 'Desconectar' : 'Conectar',
+                    style: const TextStyle(color: Colors.white),
                   ),
-                  onTap: () { 
-                    if(_connected ){
-                      testPrint.sample(pathImage,userData != null ? userData['direccion'] : '');
-                    } else {
-                      show('Ningun dispositivo conectado');
+                ),
+              ],
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(0.0, 35.0, 0.0, 0.0),
+              child: ListTile(
+                title: const Text(
+                  'Imprimir Prueba',
+                  style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black),
+                ),
+                trailing: Icon(
+                  Icons.print,
+                  color: Colors.grey.shade400,
+                ),
+                onTap: () {
+                  if (_connected) {
+                    final direccion =
+                        userData?['direccion']?.toString() ??
+                        userData?['address']?.toString() ??
+                        '';
+                    final imagePath = pathImage;
+                    if (imagePath != null) {
+                      testPrint.sample(imagePath, direccion);
                     }
-                  },
-                )),
-                Divider(
-                  color: Colors.black,
-                  height: 5,
-                ),
-                  ],
-                ),
-              ]),
-          ),
+                  } else {
+                    _showMessage('Ningún dispositivo conectado');
+                  }
+                },
+              ),
+            ),
+            const Divider(
+              color: Colors.black,
+              height: 5,
+            ),
+          ],
         ),
-    );
-  }
-
-
-  List<DropdownMenuItem<BluetoothDevice>> _getDeviceItems() {
-    List<DropdownMenuItem<BluetoothDevice>> items = [];
-    if (_devices.isEmpty) {
-       items.add(DropdownMenuItem(
-        child: Text('Ningún dispositivo encontrado'),
-      )); 
-    } else {
-      _devices.forEach((device) {
-        //print(device.type);
-        items.add(DropdownMenuItem(
-          child: Text(device.name),
-          value: device,
-        ));
-      });
-    }
-    return items;
-  }
-
-
-  void _connect() {
-    if (_device == null) {
-      show('Ningun dispositivo seleccionado');
-    } else {
-      
-      bluetooth.isConnected.then((isConnected) {
-       
-        if (!isConnected) {
-          
-          bluetooth.connect(_device).catchError((error) {
-            setState(() {
-               _connected = false;
-               });
-          });
-        } 
-        _guardarImpresora();
-        //print(_connected);
-      });
-    }
-  }
-
-
-  void _disconnect() {
-    bluetooth.disconnect();
-    setState(() => _connected = true);
-  }
-
-//write to app path
-  Future<void> writeToFile(ByteData data, String path) {
-    final buffer = data.buffer;
-    return new File(path).writeAsBytes(
-        buffer.asUint8List(data.offsetInBytes, data.lengthInBytes));
-  }
-
-  Future show(
-      String message, {
-        Duration duration: const Duration(seconds: 3),
-      }) async {
-    await new Future.delayed(new Duration(milliseconds: 100));
-    Scaffold.of(context).showSnackBar(
-      new SnackBar(
-        content: new Text(
-          message,
-          style: new TextStyle(
-            color: Colors.white,
-          ),
-        ),
-        duration: duration,
       ),
     );
+  }
+
+  List<DropdownMenuItem<BluetoothDevice?>> _getDeviceItems() {
+    if (_devices.isEmpty) {
+      return const [
+        DropdownMenuItem<BluetoothDevice?>(
+          value: null,
+          child: Text('Ningún dispositivo encontrado'),
+        ),
+      ];
+    }
+    return _devices
+        .map(
+          (device) => DropdownMenuItem<BluetoothDevice?>(
+            value: device,
+            child: Text(device.name ?? 'Dispositivo sin nombre'),
+          ),
+        )
+        .toList();
+  }
+
+  Future<void> _connect() async {
+    final device = _device;
+    if (device == null) {
+      _showMessage('Ningún dispositivo seleccionado');
+      return;
+    }
+
+    final isConnected = await bluetooth.isConnected;
+    if (isConnected == true) {
+      setState(() {
+        _connected = true;
+      });
+      return;
+    }
+
+    try {
+      await bluetooth.connect(device);
+      if (mounted) {
+        setState(() {
+          _connected = true;
+          _dispositivo = device.name;
+          _direccion = device.address;
+          _tipo = device.type;
+        });
+      }
+      await _guardarImpresora();
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _connected = false;
+        });
+      }
+      _showMessage('No se pudo conectar: $error');
+    }
+  }
+
+  Future<void> _disconnect() async {
+    await bluetooth.disconnect();
+    if (mounted) {
+      setState(() {
+        _connected = false;
+      });
+    }
+  }
+
+  Future<void> writeToFile(ByteData data, String path) {
+    final buffer = data.buffer;
+    return File(path).writeAsBytes(
+      buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
+    );
+  }
+
+  void _showMessage(String message) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(content: Text(message)),
+      );
   }
 }

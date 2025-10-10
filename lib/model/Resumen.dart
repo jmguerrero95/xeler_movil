@@ -1,18 +1,28 @@
-class Resumen{
-  int id;
-  String valor;
-  String cliente;
-  String primeros;
-  String ultimos;
-  String creado;
-  Resumen(this.id, this.valor,this.cliente,this.primeros,this.ultimos,this.creado);
+class Resumen {
+  const Resumen({
+    required this.id,
+    required this.valor,
+    required this.cliente,
+    required this.primeros,
+    required this.ultimos,
+    required this.creado,
+  });
 
-  Resumen.fromJson(Map<String, dynamic> json) {
-    id = json['id'];
-    valor = json['valor'];
-    cliente = json['cliente'];
-    primeros = json['wallet_inicio'];
-    ultimos = json['wallet_fin'];
-    creado = json['created_at'];
+  final int id;
+  final String valor;
+  final String cliente;
+  final String primeros;
+  final String ultimos;
+  final String creado;
+
+  factory Resumen.fromJson(Map<String, dynamic> json) {
+    return Resumen(
+      id: json['id'] is int ? json['id'] as int : int.tryParse('${json['id']}') ?? 0,
+      valor: json['valor']?.toString() ?? '0',
+      cliente: json['cliente']?.toString() ?? '',
+      primeros: json['wallet_inicio']?.toString() ?? '',
+      ultimos: json['wallet_fin']?.toString() ?? '',
+      creado: json['created_at']?.toString() ?? '',
+    );
   }
 }

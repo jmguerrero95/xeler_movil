@@ -1,11 +1,13 @@
 class Clientes {
-  int id;
-  String name;
-  
-  Clientes(this.id, this.name);
+  const Clientes({required this.id, required this.name});
 
-  Clientes.fromJson(Map<String, dynamic> json) {
-    id = json['id'];
-    name = json['name'];
+  final int id;
+  final String name;
+
+  factory Clientes.fromJson(Map<String, dynamic> json) {
+    return Clientes(
+      id: json['id'] is int ? json['id'] as int : int.tryParse('${json['id']}') ?? 0,
+      name: json['name']?.toString() ?? '',
+    );
   }
 }

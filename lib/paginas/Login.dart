@@ -6,34 +6,42 @@ import 'package:xeler_impresora/api/api.dart';
 import 'package:xeler_impresora/paginas/Inicio.dart';
 
 class LogIn extends StatefulWidget {
+  const LogIn({super.key});
+
   @override
-  _LogInState createState() => _LogInState();
+  State<LogIn> createState() => _LogInState();
 }
 
 class _LogInState extends State<LogIn> {
-
+  final TextEditingController mailController = TextEditingController();
+  final TextEditingController passwordController = TextEditingController();
 
   bool _isLoading = false;
 
-
-  TextEditingController mailController = TextEditingController();
-  TextEditingController passwordController = TextEditingController();
-  ScaffoldState scaffoldState;
-  _showMsg(msg) { //
-    final snackBar = SnackBar(
-      content: Text(msg),
-      action: SnackBarAction(
-        label: 'Cerrar',
-        onPressed: () {
-          // Some code to undo the change!
-        },
-      ),
-    );
-    Scaffold.of(context).showSnackBar(snackBar);
+  @override
+  void dispose() {
+    mailController.dispose();
+    passwordController.dispose();
+    super.dispose();
   }
- @override
+
+  void _showMsg(String msg) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(msg),
+          action: SnackBarAction(
+            label: 'Cerrar',
+            onPressed: () => ScaffoldMessenger.of(context).hideCurrentSnackBar(),
+          ),
+        ),
+      );
+  }
+
+  @override
   Widget build(BuildContext context) {
-      final logo = Hero(
+    final logo = Hero(
       tag: 'hero',
       child: CircleAvatar(
         backgroundColor: Colors.transparent,
@@ -43,16 +51,16 @@ class _LogInState extends State<LogIn> {
     );
 
     final email = TextFormField(
-      cursorColor: Color.fromARGB(255, 36, 38, 80),
+      cursorColor: const Color.fromARGB(255, 36, 38, 80),
       keyboardType: TextInputType.emailAddress,
       controller: mailController,
       autofocus: false,
-      style: TextStyle(color: Color(0xFF000000)),
+      style: const TextStyle(color: Color(0xFF000000)),
       decoration: InputDecoration(
         hintText: 'Usuario',
-        fillColor: Colors.white, 
+        fillColor: Colors.white,
         filled: true,
-        contentPadding: EdgeInsets.fromLTRB(20.0, 10.0, 20.0, 10.0),
+        contentPadding: const EdgeInsets.fromLTRB(20.0, 10.0, 20.0, 10.0),
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(32.0)),
       ),
     );
@@ -61,91 +69,101 @@ class _LogInState extends State<LogIn> {
       autofocus: false,
       obscureText: true,
       controller: passwordController,
-      style: TextStyle(color: Color(0xFF000000)),
+      style: const TextStyle(color: Color(0xFF000000)),
       decoration: InputDecoration(
         hintText: 'Contraseña',
-        fillColor: Colors.white, 
+        fillColor: Colors.white,
         filled: true,
-        contentPadding: EdgeInsets.fromLTRB(20.0, 10.0, 20.0, 10.0),
+        contentPadding: const EdgeInsets.fromLTRB(20.0, 10.0, 20.0, 10.0),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(32.0)
+          borderRadius: BorderRadius.circular(32.0),
         ),
-        
       ),
     );
 
     final loginButton = Padding(
-      padding: EdgeInsets.symmetric(vertical: 16.0),
-      child: RaisedButton(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(24),
+      padding: const EdgeInsets.symmetric(vertical: 16.0),
+      child: SizedBox(
+        width: double.infinity,
+        child: ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color.fromARGB(255, 118, 104, 254),
+            padding: const EdgeInsets.all(12),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(24),
+            ),
+          ),
+          onPressed: _isLoading ? null : _login,
+          child: Text(
+            _isLoading ? 'Iniciando...' : 'Iniciar Sesión',
+            style: const TextStyle(color: Colors.white),
+          ),
         ),
-        onPressed: _isLoading ? null : _login,
-        padding: EdgeInsets.all(12),
-        color: Color.fromARGB(255,118, 104, 254),
-        child: Text(_isLoading? 'Iniciando...' : 'Iniciar Sesión', 
-        style: TextStyle(color: Colors.white)),
       ),
     );
 
     return Scaffold(
-      backgroundColor: Color.fromARGB(255, 36, 38, 80),
+      backgroundColor: const Color.fromARGB(255, 36, 38, 80),
       body: Center(
         child: ListView(
           shrinkWrap: true,
-          padding: EdgeInsets.only(left: 24.0, right: 24.0),
+          padding: const EdgeInsets.only(left: 24.0, right: 24.0),
           children: <Widget>[
             logo,
-            SizedBox(height: 48.0),
+            const SizedBox(height: 48.0),
             email,
-            SizedBox(height: 8.0),
+            const SizedBox(height: 8.0),
             password,
-            SizedBox(height: 24.0),
-            loginButton
+            const SizedBox(height: 24.0),
+            loginButton,
           ],
         ),
       ),
     );
-  
-
-
-
   }
 
-  void _login() async{
-    
+  Future<void> _login() async {
     setState(() {
-       _isLoading = true;
+      _isLoading = true;
     });
 
-    var data = {
-        'username' : mailController.text, 
-        'password' : passwordController.text
+    final data = <String, String>{
+      'username': mailController.text.trim(),
+      'password': passwordController.text,
     };
 
-    var res = await CallApi().postData(data, 'login');
-    var body = json.decode(res.body);
-    //print(body);
-    if(body['success']){
-      SharedPreferences localStorage = await SharedPreferences.getInstance();
-      localStorage.setString('token', body['token']);
-      localStorage.setString('user', json.encode(body['user']));
-      Navigator.push(
-        context,
-        new MaterialPageRoute(
-            builder: (context) => Inicio()));
-    }else{
-      _showMsg(body['message']);
+    try {
+      final res = await CallApi().postData(data, 'login');
+      final body = jsonDecode(res.body) as Map<String, dynamic>;
+
+      if (body['success'] == true) {
+        final localStorage = await SharedPreferences.getInstance();
+        final token = body['token']?.toString();
+        final user = body['user'];
+        if (token != null && user != null) {
+          await localStorage.setString('token', token);
+          await localStorage.setString('user', jsonEncode(user));
+          if (!mounted) return;
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute<void>(
+              builder: (context) => const Inicio(),
+            ),
+          );
+        } else {
+          _showMsg('Respuesta inválida del servidor.');
+        }
+      } else {
+        final message = body['message']?.toString() ?? 'Credenciales inválidas';
+        _showMsg(message);
+      }
+    } catch (error) {
+      _showMsg('Error de conexión: $error');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
-
-
-    setState(() {
-       _isLoading = false;
-    });
-
-  
-
-
   }
-  
 }

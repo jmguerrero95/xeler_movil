@@ -1,38 +1,45 @@
-import 'package:http/http.dart' as http;
-import 'dart:convert' as convert;
+import 'dart:convert';
 
+import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
-class CallApi{
-  final String _url = 'https://impresora.xeler.io/api/';
+class CallApi {
+  static const String _baseUrl = 'https://impresora.xeler.io/api/';
 
-    postData(data, apiUrl) async {
-        var fullUrl = _url + apiUrl + await _getToken();
-        return await http.post(
-          fullUrl,
-          body: convert.jsonEncode(data),
-          headers: _setHeaders()
-        );
+  Future<http.Response> postData(
+    Map<String, dynamic> data,
+    String apiUrl,
+  ) async {
+    final uri = await _buildUri(apiUrl);
+    return http.post(
+      uri,
+      body: jsonEncode(data),
+      headers: _headers,
+    );
+  }
+
+  Future<http.Response> getData(String apiUrl) async {
+    final uri = await _buildUri(apiUrl);
+    return http.get(uri, headers: _headers);
+  }
+
+  Future<Uri> _buildUri(String apiUrl) async {
+    final token = await _readToken();
+    final base = '$_baseUrl$apiUrl';
+    if (token == null || token.isEmpty) {
+      return Uri.parse(base);
     }
+    final separator = apiUrl.contains('?') ? '&' : '?';
+    return Uri.parse('$base${separator}token=$token');
+  }
 
-    getData(apiUrl) async {
-      var fullUrl = _url + apiUrl + await _getToken();
-      return await http.get(
-        fullUrl,
-        headers: _setHeaders()
-      );
-    }
+  Map<String, String> get _headers => const {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      };
 
-
-
-    _setHeaders() => {
-          'Content-type' : 'application/json',
-          'Accept' : 'application/json'
-    };
-
-    _getToken() async {
-        SharedPreferences localStorage = await SharedPreferences.getInstance();
-        var token = localStorage.getString('token');
-        return '?token=$token';
-    }
+  Future<String?> _readToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('token');
+  }
 }
