@@ -115,6 +115,7 @@ class _SeleccionPage2State extends State<SeleccionPage2> {
       'dispositivo': _dispositivo,
       'tipo': _tipo,
       'address': _direccion,
+      'direccion': _direccion,
     };
 
     final res = await CallApi().postData(data, 'guardarImpresora');

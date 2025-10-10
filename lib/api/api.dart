@@ -24,9 +24,13 @@ class CallApi {
   }
 
   Future<Uri> _buildUri(String apiUrl) async {
-    final tokenQuery = await _tokenQuery();
+    final token = await _readToken();
+    final base = '$_baseUrl$apiUrl';
+    if (token == null || token.isEmpty) {
+      return Uri.parse(base);
+    }
     final separator = apiUrl.contains('?') ? '&' : '?';
-    return Uri.parse('$_baseUrl$apiUrl$separator$tokenQuery');
+    return Uri.parse('$base${separator}token=$token');
   }
 
   Map<String, String> get _headers => const {
@@ -34,9 +38,8 @@ class CallApi {
         'Accept': 'application/json',
       };
 
-  Future<String> _tokenQuery() async {
+  Future<String?> _readToken() async {
     final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('token');
-    return 'token=${token ?? ''}';
+    return prefs.getString('token');
   }
 }
