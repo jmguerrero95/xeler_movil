@@ -7,6 +7,7 @@ import 'dart:typed_data';
 
 import 'package:charset_converter/charset_converter.dart';
 import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
+import 'package:meta/meta.dart';
 import 'package:image/image.dart' as img;
 import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
 
@@ -18,6 +19,17 @@ class BlueThermalPrinter {
   }
 
   static final BlueThermalPrinter instance = BlueThermalPrinter._internal();
+  static bool _stateMonitoringEnabled = true;
+
+  @visibleForTesting
+  static void configure({required bool stateMonitoringEnabled}) {
+    _stateMonitoringEnabled = stateMonitoringEnabled;
+    if (!_stateMonitoringEnabled) {
+      instance._stopStateMonitor();
+    } else {
+      instance._startStateMonitor();
+    }
+  }
 
   static const int CONNECTED = 1;
   static const int DISCONNECTED = 0;
@@ -145,6 +157,10 @@ class BlueThermalPrinter {
   }
 
   void _startStateMonitor() {
+    if (!_stateMonitoringEnabled) {
+      _stopStateMonitor();
+      return;
+    }
     _stateTimer ??= Timer.periodic(const Duration(seconds: 2), (_) async {
       final connected = await isConnected ?? false;
       if (_lastConnected != connected) {
@@ -154,8 +170,13 @@ class BlueThermalPrinter {
     });
   }
 
-  Future<void> dispose() async {
+  void _stopStateMonitor() {
     _stateTimer?.cancel();
+    _stateTimer = null;
+  }
+
+  Future<void> dispose() async {
+    _stopStateMonitor();
     await _stateController.close();
   }
 
@@ -165,12 +186,16 @@ class BlueThermalPrinter {
     }
     try {
       _profile = await CapabilityProfile.load();
-    } catch (_) {
-      _profile = CapabilityProfile(
-        name: 'default',
-        styles: const <String, List<int>>{},
-        supportedCodeTables: const <int, String>{},
-      );
+    } catch (error) {
+      // The upstream API does not expose a public constructor, so the only
+      // recovery strategy is to retry the default profile load explicitly.
+      // If this still fails we surface the original exception to the caller
+      // so the UI can react accordingly.
+      try {
+        _profile = await CapabilityProfile.load(name: 'default');
+      } catch (_) {
+        throw Exception('No se pudo cargar el perfil de la impresora: $error');
+      }
     }
     return _profile!;
   }

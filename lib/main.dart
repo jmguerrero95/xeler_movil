@@ -1,7 +1,6 @@
 import 'dart:convert';
 
 import 'package:blue_thermal_printer/blue_thermal_printer.dart';
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -32,6 +31,12 @@ class _MyAppState extends State<MyApp> {
   void initState() {
     super.initState();
     _checkIfLoggedIn();
+  }
+
+  @override
+  void dispose() {
+    bluetooth.dispose();
+    super.dispose();
   }
 
   Future<void> _checkIfLoggedIn() async {
@@ -86,7 +91,7 @@ class _MyAppState extends State<MyApp> {
       localizationsDelegates: const [
         GlobalMaterialLocalizations.delegate,
         GlobalWidgetsLocalizations.delegate,
-        DefaultCupertinoLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
       ],
       supportedLocales: const [
         Locale('es'),
