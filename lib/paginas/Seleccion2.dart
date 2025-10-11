@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -24,6 +25,9 @@ class _SeleccionPage2State extends State<SeleccionPage2> {
   List<BluetoothDevice> _devices = [];
   BluetoothDevice? _device;
   bool _connected = false;
+  bool _bluetoothEnabled = true;
+  bool _loadingDevices = false;
+  StreamSubscription<int>? _stateSubscription;
   Map<String, dynamic>? userData;
   String? _dispositivo;
   String? _direccion;
@@ -33,34 +37,7 @@ class _SeleccionPage2State extends State<SeleccionPage2> {
   @override
   void initState() {
     super.initState();
-    initPlatformState();
-    initSavetoPath();
-    _getUserInfo();
-  }
-
-  Future<void> initSavetoPath() async {
-    const filename = '192xeler.png';
-    final bytes = await rootBundle.load('assets/images/192xeler.png');
-    final dir = (await getApplicationDocumentsDirectory()).path;
-    final fullPath = '$dir/$filename';
-    await writeToFile(bytes, fullPath);
-    if (mounted) {
-      setState(() {
-        pathImage = fullPath;
-      });
-    }
-  }
-
-  Future<void> initPlatformState() async {
-    final isConnected = await bluetooth.isConnected;
-    List<BluetoothDevice> devices = [];
-    try {
-      devices = await bluetooth.getBondedDevices();
-    } on PlatformException {
-      devices = [];
-    }
-
-    bluetooth.onStateChanged().listen((state) {
+    _stateSubscription = bluetooth.onStateChanged().listen((state) {
       if (!mounted) return;
       switch (state) {
         case BlueThermalPrinter.CONNECTED:
@@ -77,12 +54,83 @@ class _SeleccionPage2State extends State<SeleccionPage2> {
           break;
       }
     });
+    initPlatformState();
+    initSavetoPath();
+    _getUserInfo();
+  }
+
+  @override
+  void dispose() {
+    _stateSubscription?.cancel();
+    super.dispose();
+  }
+
+  Future<void> initSavetoPath() async {
+    const filename = '192xeler.png';
+    final bytes = await rootBundle.load('assets/images/192xeler.png');
+    final dir = (await getApplicationDocumentsDirectory()).path;
+    final fullPath = '$dir/$filename';
+    await writeToFile(bytes, fullPath);
+    if (mounted) {
+      setState(() {
+        pathImage = fullPath;
+      });
+    }
+  }
+
+  Future<void> initPlatformState({bool notifyIfDenied = false}) async {
+    if (!mounted) return;
+
+    setState(() {
+      _loadingDevices = true;
+    });
+
+    final hasPermissions = await _ensurePermissions(showWarning: notifyIfDenied);
+    if (!hasPermissions) {
+      if (!mounted) return;
+      setState(() {
+        _devices = [];
+        _connected = false;
+        _bluetoothEnabled = false;
+        _loadingDevices = false;
+      });
+      return;
+    }
+
+    final enabled = await bluetooth.isBluetoothEnabled;
+    List<BluetoothDevice> devices = [];
+    bool isConnected = false;
+    if (enabled) {
+      try {
+        devices = await bluetooth.getBondedDevices();
+      } on PlatformException {
+        devices = [];
+      }
+      isConnected = await bluetooth.isConnected == true;
+    }
+
+    BluetoothDevice? selectedDevice = _device;
+    if (_direccion != null) {
+      for (final candidate in devices) {
+        if (candidate.address == _direccion) {
+          selectedDevice = candidate;
+          break;
+        }
+      }
+    }
 
     if (!mounted) return;
     setState(() {
       _devices = devices;
-      _connected = isConnected == true;
+      _connected = isConnected;
+      _bluetoothEnabled = enabled;
+      _device = selectedDevice;
+      _loadingDevices = false;
     });
+
+    if (!enabled && notifyIfDenied && mounted) {
+      _showMessage('Activa el Bluetooth del dispositivo para continuar');
+    }
   }
 
   Future<void> _getUserInfo() async {
@@ -173,6 +221,23 @@ class _SeleccionPage2State extends State<SeleccionPage2> {
                 ),
               ],
             ),
+            if (_loadingDevices) const LinearProgressIndicator(),
+            if (!_bluetoothEnabled)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Row(
+                  children: [
+                    const Icon(Icons.info_outline, color: Colors.redAccent),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Bluetooth está desactivado. Enciéndelo para buscar impresoras cercanas.',
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             const SizedBox(height: 10),
             Row(
               crossAxisAlignment: CrossAxisAlignment.center,
@@ -180,7 +245,7 @@ class _SeleccionPage2State extends State<SeleccionPage2> {
               children: <Widget>[
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(backgroundColor: Colors.brown),
-                  onPressed: initPlatformState,
+                  onPressed: () => initPlatformState(notifyIfDenied: true),
                   child: const Text('Actualizar', style: TextStyle(color: Colors.white)),
                 ),
                 const SizedBox(width: 20),
@@ -252,10 +317,40 @@ class _SeleccionPage2State extends State<SeleccionPage2> {
         .toList();
   }
 
+  Future<bool> _ensurePermissions({bool showWarning = false}) async {
+    final granted = await bluetooth.ensurePermissions();
+    if (!granted && mounted && showWarning) {
+      if (bluetooth.permissionsPermanentlyDenied) {
+        _showMessage(
+          'Debes habilitar los permisos de Bluetooth manualmente desde ajustes.',
+          action: SnackBarAction(
+            label: 'Abrir',
+            onPressed: () {
+              bluetooth.openSystemSettings();
+            },
+          ),
+        );
+      } else {
+        _showMessage('Se requieren permisos de Bluetooth para continuar.');
+      }
+    }
+    return granted;
+  }
+
   Future<void> _connect() async {
     final device = _device;
     if (device == null) {
       _showMessage('Ningún dispositivo seleccionado');
+      return;
+    }
+
+    if (!await _ensurePermissions(showWarning: true)) {
+      return;
+    }
+
+    final enabled = await bluetooth.isBluetoothEnabled;
+    if (!enabled) {
+      _showMessage('Activa el Bluetooth del dispositivo para conectar la impresora.');
       return;
     }
 
@@ -304,11 +399,14 @@ class _SeleccionPage2State extends State<SeleccionPage2> {
     );
   }
 
-  void _showMessage(String message) {
+  void _showMessage(String message, {SnackBarAction? action}) {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(
-        SnackBar(content: Text(message)),
+        SnackBar(
+          content: Text(message),
+          action: action,
+        ),
       );
   }
 }

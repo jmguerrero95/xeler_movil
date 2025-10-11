@@ -44,6 +44,7 @@ class _MyAppState extends State<MyApp> {
     final token = localStorage.getString('token');
     final userJson = localStorage.getString('user');
     if (token == null || userJson == null) {
+      if (!mounted) return;
       setState(() {
         _isLoggedIn = false;
         userData = null;
@@ -57,6 +58,7 @@ class _MyAppState extends State<MyApp> {
         (decoded['address'] ?? decoded['direccion'])?.toString();
     final tipoRaw = decoded['tipo'];
 
+    if (!mounted) return;
     setState(() {
       _isLoggedIn = true;
       userData = decoded;
@@ -66,6 +68,11 @@ class _MyAppState extends State<MyApp> {
     });
 
     if (_direccion == null || _dispositivo == null || _tipo == null) {
+      return;
+    }
+
+    final hasPermissions = await bluetooth.ensurePermissions();
+    if (!hasPermissions) {
       return;
     }
 

@@ -7,8 +7,9 @@ import 'dart:typed_data';
 
 import 'package:charset_converter/charset_converter.dart';
 import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
-import 'package:meta/meta.dart';
 import 'package:image/image.dart' as img;
+import 'package:meta/meta.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
 
 /// Compatibility wrapper mimicking the legacy `blue_thermal_printer` API while
@@ -41,11 +42,14 @@ class BlueThermalPrinter {
   bool? _lastConnected;
 
   CapabilityProfile? _profile;
+  bool _permissionsPermanentlyDenied = false;
 
   /// Paper size used for ESC/POS command generation.
   final PaperSize _paperSize = PaperSize.mm58;
 
   Stream<int> onStateChanged() => _stateController.stream;
+
+  bool get permissionsPermanentlyDenied => _permissionsPermanentlyDenied;
 
   Future<bool?> get isConnected async {
     try {
@@ -55,7 +59,76 @@ class BlueThermalPrinter {
     }
   }
 
+  Future<bool> openSystemSettings() async {
+    if (!Platform.isAndroid && !Platform.isIOS) {
+      return false;
+    }
+    try {
+      return await openAppSettings();
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<bool> get isBluetoothEnabled async {
+    try {
+      return await PrintBluetoothThermal.bluetoothEnabled;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<bool> ensurePermissions() async {
+    if (!Platform.isAndroid && !Platform.isIOS) {
+      return true;
+    }
+
+    _permissionsPermanentlyDenied = false;
+
+    if (Platform.isAndroid) {
+      final Map<Permission, PermissionStatus> statuses = await <Permission>{
+        Permission.bluetooth,
+        Permission.bluetoothScan,
+        Permission.bluetoothConnect,
+        Permission.locationWhenInUse,
+      }.request();
+
+      for (final entry in statuses.entries) {
+        final permission = entry.key;
+        final status = entry.value;
+        if (status.isPermanentlyDenied &&
+            permission != Permission.locationWhenInUse) {
+          _permissionsPermanentlyDenied = true;
+        }
+      }
+    } else if (Platform.isIOS) {
+      final status = await Permission.bluetooth.request();
+      if (status.isPermanentlyDenied) {
+        _permissionsPermanentlyDenied = true;
+      }
+      if (!status.isGranted && !status.isLimited) {
+        return false;
+      }
+    }
+
+    try {
+      return await PrintBluetoothThermal.isPermissionBluetoothGranted;
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<List<BluetoothDevice>> getBondedDevices() async {
+    final hasPermissions = await ensurePermissions();
+    if (!hasPermissions) {
+      return <BluetoothDevice>[];
+    }
+
+    final enabled = await isBluetoothEnabled;
+    if (!enabled) {
+      return <BluetoothDevice>[];
+    }
+
     try {
       final results = await PrintBluetoothThermal.pairedBluetooths;
       return results
@@ -68,6 +141,16 @@ class BlueThermalPrinter {
   }
 
   Future<void> connect(BluetoothDevice device) async {
+    final hasPermissions = await ensurePermissions();
+    if (!hasPermissions) {
+      throw StateError('Permisos de Bluetooth denegados');
+    }
+
+    final enabled = await isBluetoothEnabled;
+    if (!enabled) {
+      throw StateError('Bluetooth desactivado');
+    }
+
     final address = device.address;
     if (address == null || address.isEmpty) {
       throw ArgumentError('El dispositivo no tiene dirección Bluetooth');
