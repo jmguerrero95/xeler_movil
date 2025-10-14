@@ -90,6 +90,7 @@ class BlueThermalPrinter {
         Permission.bluetooth,
         Permission.bluetoothScan,
         Permission.bluetoothConnect,
+        Permission.bluetoothAdvertise,
         Permission.locationWhenInUse,
       ].request();
 
@@ -99,6 +100,11 @@ class BlueThermalPrinter {
         if (status.isPermanentlyDenied &&
             permission != Permission.locationWhenInUse) {
           _permissionsPermanentlyDenied = true;
+        }
+
+        if (!status.isGranted && !status.isLimited &&
+            permission != Permission.bluetooth) {
+          return false;
         }
       }
     } else if (Platform.isIOS) {
