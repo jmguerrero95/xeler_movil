@@ -157,18 +157,18 @@ class _DetallesClienteState extends State<DetallesCliente> {
                 height: 690,
                 margin: const EdgeInsets.only(top: 15),
                 child: Column(
-                  children: <Widget>[
-                    Row(
-                      children: const <Widget>[
-                        Padding(
-                          padding: EdgeInsets.only(top: 0.0, left: 20),
-                          child: Text(
-                            'Últimas 5 Facturas',
-                            style: TextStyle(fontSize: 18.0),
+                    children: <Widget>[
+                      const Row(
+                        children: <Widget>[
+                          Padding(
+                            padding: EdgeInsets.only(top: 0.0, left: 20),
+                            child: Text(
+                              'Últimas 5 Facturas',
+                              style: TextStyle(fontSize: 18.0),
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
+                        ],
+                      ),
                     Expanded(
                       child: _ultimos.isNotEmpty
                           ? ListView.builder(

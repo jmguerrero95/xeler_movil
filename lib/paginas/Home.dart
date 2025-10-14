@@ -75,18 +75,18 @@ class _HomePageState extends State<HomePage> {
           height: 590,
           margin: const EdgeInsets.only(top: 15),
           child: Column(
-            children: <Widget>[
-              Row(
-                children: const <Widget>[
-                  Padding(
-                    padding: EdgeInsets.only(top: 8.0, left: 20),
-                    child: Text(
-                      'Últimos 5 Clientes',
-                      style: TextStyle(fontSize: 18.0),
+              children: <Widget>[
+                const Row(
+                  children: <Widget>[
+                    Padding(
+                      padding: EdgeInsets.only(top: 8.0, left: 20),
+                      child: Text(
+                        'Últimos 5 Clientes',
+                        style: TextStyle(fontSize: 18.0),
+                      ),
                     ),
-                  ),
-                ],
-              ),
+                  ],
+                ),
               Expanded(
                 child: _isLoading
                     ? const Center(child: CircularProgressIndicator())

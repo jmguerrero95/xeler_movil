@@ -1,5 +1,15 @@
 include: package:flutter_lints/flutter.yaml
 
+analyzer:
+  errors:
+    constant_identifier_names: ignore
+    control_flow_in_finally: ignore
+    curly_braces_in_flow_control_structures: ignore
+    file_names: ignore
+    no_leading_underscores_for_local_identifiers: ignore
+    prefer_interpolation_to_compose_strings: ignore
+    unnecessary_import: ignore
+
 linter:
   rules:
     prefer_const_constructors: true
