@@ -86,12 +86,12 @@ class BlueThermalPrinter {
     _permissionsPermanentlyDenied = false;
 
     if (Platform.isAndroid) {
-      final Map<Permission, PermissionStatus> statuses = await <Permission>{
+      final Map<Permission, PermissionStatus> statuses = await <Permission>[
         Permission.bluetooth,
         Permission.bluetoothScan,
         Permission.bluetoothConnect,
         Permission.locationWhenInUse,
-      }.request();
+      ].request();
 
       for (final entry in statuses.entries) {
         final permission = entry.key;
@@ -133,7 +133,8 @@ class BlueThermalPrinter {
       final results = await PrintBluetoothThermal.pairedBluetooths;
       return results
           .map((dynamic item) => BluetoothDevice.fromDynamic(item))
-          .where((device) => device.address != null && device.address!.isNotEmpty)
+          .where(
+              (device) => device.address != null && device.address!.isNotEmpty)
           .toList();
     } catch (_) {
       return <BluetoothDevice>[];
@@ -223,9 +224,8 @@ class BlueThermalPrinter {
     if (decoded == null) {
       throw Exception('No fue posible decodificar la imagen proporcionada');
     }
-    final image = decoded.width > 384
-        ? img.copyResize(decoded, width: 384)
-        : decoded;
+    final image =
+        decoded.width > 384 ? img.copyResize(decoded, width: 384) : decoded;
     final generator = await _getGenerator();
     final bytes = generator.imageRaster(
       image,
@@ -336,7 +336,7 @@ class BluetoothDevice {
     if (value is Map) {
       return BluetoothDevice(
         name: value['name']?.toString(),
-        address: value['address']?.toString() ?? value['macAddress']?.toString(),
+        address: _readAddressFromMap(value),
         type: _parseType(value['type']),
       );
     }
@@ -355,8 +355,9 @@ class BluetoothDevice {
 
     try {
       final dynamic dynamicValue = value;
-      final dynamic dynamicAddress =
-          dynamicValue.address ?? dynamicValue.macAddress;
+      final dynamic dynamicAddress = dynamicValue.address ??
+          dynamicValue.macAddress ??
+          dynamicValue.macAdress;
       if (dynamicAddress is String) {
         address = dynamicAddress;
       }
@@ -378,7 +379,7 @@ class BluetoothDevice {
   factory BluetoothDevice.fromMap(Map<String, dynamic> map) {
     return BluetoothDevice(
       name: map['name']?.toString(),
-      address: map['address']?.toString(),
+      address: _readAddressFromMap(map),
       type: _parseType(map['type']),
     );
   }
@@ -401,5 +402,14 @@ class BluetoothDevice {
       return value;
     }
     return int.tryParse('$value');
+  }
+
+  static String? _readAddressFromMap(Map<dynamic, dynamic> map) {
+    final address = map['address'] ??
+        map['macAddress'] ??
+        map['macAdress'] ??
+        map['mac'] ??
+        map['mac_address'];
+    return address?.toString();
   }
 }
