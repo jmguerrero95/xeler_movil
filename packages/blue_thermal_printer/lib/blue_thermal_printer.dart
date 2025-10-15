@@ -99,6 +99,27 @@ class BlueThermalPrinter {
     return _lastKnownBluetoothEnabled ?? false;
   }
 
+  Future<bool> requestEnableBluetooth() async {
+    if (!Platform.isAndroid) {
+      return await isBluetoothEnabled;
+    }
+
+    try {
+      final bool? enabled = await _bluetoothStateChannel
+          .invokeMethod<bool>('requestEnableBluetooth');
+      if (enabled != null) {
+        _lastKnownBluetoothEnabled = enabled;
+        return enabled;
+      }
+    } catch (_) {
+      // Ignore channel failures and fall back to the plugin/state polling.
+    }
+
+    final bool fallbackEnabled = await isBluetoothEnabled;
+    _lastKnownBluetoothEnabled = fallbackEnabled;
+    return fallbackEnabled;
+  }
+
   Future<bool> ensurePermissions() async {
     if (!Platform.isAndroid && !Platform.isIOS) {
       return true;

@@ -28,6 +28,7 @@ class _SeleccionPage2State extends State<SeleccionPage2> {
   bool _bluetoothEnabled = true;
   bool _loadingDevices = false;
   bool _permissionsGranted = true;
+  bool _enablingBluetooth = false;
   StreamSubscription<int>? _stateSubscription;
   Map<String, dynamic>? userData;
   String? _dispositivo;
@@ -55,7 +56,7 @@ class _SeleccionPage2State extends State<SeleccionPage2> {
           break;
       }
     });
-    initPlatformState();
+    initPlatformState(notifyIfDenied: true);
     initSavetoPath();
     _getUserInfo();
   }
@@ -245,6 +246,11 @@ class _SeleccionPage2State extends State<SeleccionPage2> {
                       TextButton(
                         onPressed: bluetooth.openSystemSettings,
                         child: const Text('Abrir ajustes'),
+                      )
+                    else
+                      TextButton(
+                        onPressed: () => initPlatformState(notifyIfDenied: true),
+                        child: const Text('Solicitar permisos'),
                       ),
                   ],
                 ),
@@ -261,6 +267,21 @@ class _SeleccionPage2State extends State<SeleccionPage2> {
                         'Bluetooth está desactivado. Enciéndelo para buscar impresoras cercanas.',
                         style: Theme.of(context).textTheme.bodyMedium,
                       ),
+                    ),
+                    const SizedBox(width: 8),
+                    TextButton(
+                      onPressed: _enablingBluetooth
+                          ? null
+                          : () async {
+                              await _requestEnableBluetooth();
+                            },
+                      child: _enablingBluetooth
+                          ? const SizedBox(
+                              height: 16,
+                              width: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Text('Encender'),
                     ),
                   ],
                 ),
@@ -367,6 +388,39 @@ class _SeleccionPage2State extends State<SeleccionPage2> {
       }
     }
     return granted;
+  }
+
+  Future<void> _requestEnableBluetooth() async {
+    if (_enablingBluetooth) {
+      return;
+    }
+
+    if (mounted) {
+      setState(() {
+        _enablingBluetooth = true;
+      });
+    }
+
+    bool enabled = false;
+    try {
+      enabled = await bluetooth.requestEnableBluetooth();
+    } catch (error) {
+      enabled = false;
+    }
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _enablingBluetooth = false;
+    });
+
+    if (!enabled) {
+      _showMessage('No se pudo activar el Bluetooth. Verifica los permisos del sistema.');
+    }
+
+    await initPlatformState(notifyIfDenied: true);
   }
 
   Future<void> _connect() async {
