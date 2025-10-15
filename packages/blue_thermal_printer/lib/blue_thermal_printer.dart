@@ -43,6 +43,7 @@ class BlueThermalPrinter {
 
   CapabilityProfile? _profile;
   bool _permissionsPermanentlyDenied = false;
+  int? _cachedAndroidVersion;
 
   /// Paper size used for ESC/POS command generation.
   final PaperSize _paperSize = PaperSize.mm58;
@@ -86,25 +87,47 @@ class BlueThermalPrinter {
     _permissionsPermanentlyDenied = false;
 
     if (Platform.isAndroid) {
-      final Map<Permission, PermissionStatus> statuses = await <Permission>[
-        Permission.bluetooth,
+      final int androidVersion = await _resolveAndroidVersion() ?? 11;
+
+      final List<Permission> permissions = <Permission>[
         Permission.bluetoothScan,
         Permission.bluetoothConnect,
-        Permission.bluetoothAdvertise,
-        Permission.locationWhenInUse,
-      ].request();
+      ];
 
-      for (final entry in statuses.entries) {
-        final permission = entry.key;
-        final status = entry.value;
+      // Android 11 and below use the legacy BLUETOOTH permission group and
+      // still need location access to discover nearby devices. When the device
+      // runs Android 12 or newer those permissions become optional and the app
+      // should not block if the user refuses them.
+      final bool enforceLegacyPermissions = androidVersion < 12;
+      if (enforceLegacyPermissions) {
+        permissions
+          ..add(Permission.bluetooth)
+          ..add(Permission.locationWhenInUse);
+      }
+
+      final Map<Permission, PermissionStatus> statuses =
+          await permissions.request();
+
+      for (final MapEntry<Permission, PermissionStatus> entry in statuses.entries) {
+        final Permission permission = entry.key;
+        final PermissionStatus status = entry.value;
         if (status.isPermanentlyDenied &&
             permission != Permission.locationWhenInUse) {
           _permissionsPermanentlyDenied = true;
         }
 
-        if (!status.isGranted && !status.isLimited &&
-            permission != Permission.bluetooth) {
-          return false;
+        final bool isLocationPermission =
+            permission == Permission.locationWhenInUse;
+        final bool isLegacyBluetoothPermission =
+            permission == Permission.bluetooth;
+        if (!status.isGranted && !status.isLimited) {
+          if (!enforceLegacyPermissions &&
+              (isLocationPermission || isLegacyBluetoothPermission)) {
+            continue;
+          }
+          if (!isLocationPermission || enforceLegacyPermissions) {
+            return false;
+          }
         }
       }
     } else if (Platform.isIOS) {
@@ -303,6 +326,76 @@ class BlueThermalPrinter {
       throw StateError('La impresora no está conectada');
     }
     await PrintBluetoothThermal.writeBytes(Uint8List.fromList(bytes));
+  }
+
+  Future<int?> _resolveAndroidVersion() async {
+    if (!Platform.isAndroid) {
+      return null;
+    }
+    if (_cachedAndroidVersion != null) {
+      return _cachedAndroidVersion;
+    }
+
+    final List<String?> candidates = <String?>[];
+    try {
+      candidates.add(await PrintBluetoothThermal.platformVersion);
+    } catch (_) {
+      // Ignored: the version lookup is best-effort.
+    }
+    candidates
+      ..add(Platform.operatingSystemVersion)
+      ..add(Platform.version);
+
+    for (final String? candidate in candidates) {
+      final int? parsed = _parseAndroidVersion(candidate);
+      if (parsed != null) {
+        _cachedAndroidVersion = parsed;
+        return parsed;
+      }
+    }
+
+    return null;
+  }
+
+  int? _parseAndroidVersion(String? source) {
+    if (source == null || source.isEmpty) {
+      return null;
+    }
+
+    final RegExpMatch? androidMatch =
+        RegExp(r'Android\s*(\d+)(?:\.\d+)?').firstMatch(source);
+    if (androidMatch != null) {
+      return int.tryParse(androidMatch.group(1)!);
+    }
+
+    final RegExpMatch? apiMatch = RegExp(r'API\s*(\d+)').firstMatch(source);
+    if (apiMatch != null) {
+      final int? api = int.tryParse(apiMatch.group(1)!);
+      if (api != null) {
+        return _androidVersionFromApi(api);
+      }
+    }
+
+    return null;
+  }
+
+  int? _androidVersionFromApi(int api) {
+    if (api >= 35) return 15;
+    if (api >= 34) return 14;
+    if (api >= 33) return 13;
+    if (api >= 32) return 12;
+    if (api >= 31) return 12;
+    if (api >= 30) return 11;
+    if (api >= 29) return 10;
+    if (api >= 28) return 9;
+    if (api >= 27) return 8;
+    if (api >= 26) return 8;
+    if (api >= 25) return 7;
+    if (api >= 24) return 7;
+    if (api >= 23) return 6;
+    if (api >= 22) return 5;
+    if (api >= 21) return 5;
+    return null;
   }
 
   PosAlign _mapAlign(int align) {

@@ -27,6 +27,7 @@ class _SeleccionPage2State extends State<SeleccionPage2> {
   bool _connected = false;
   bool _bluetoothEnabled = true;
   bool _loadingDevices = false;
+  bool _permissionsGranted = true;
   StreamSubscription<int>? _stateSubscription;
   Map<String, dynamic>? userData;
   String? _dispositivo;
@@ -93,6 +94,7 @@ class _SeleccionPage2State extends State<SeleccionPage2> {
         _connected = false;
         _bluetoothEnabled = false;
         _loadingDevices = false;
+        _permissionsGranted = false;
       });
       return;
     }
@@ -126,6 +128,7 @@ class _SeleccionPage2State extends State<SeleccionPage2> {
       _bluetoothEnabled = enabled;
       _device = selectedDevice;
       _loadingDevices = false;
+      _permissionsGranted = true;
     });
 
     if (!enabled && notifyIfDenied && mounted) {
@@ -222,7 +225,31 @@ class _SeleccionPage2State extends State<SeleccionPage2> {
               ],
             ),
             if (_loadingDevices) const LinearProgressIndicator(),
-            if (!_bluetoothEnabled)
+            if (!_permissionsGranted)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(Icons.info_outline, color: Colors.redAccent),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        bluetooth.permissionsPermanentlyDenied
+                            ? 'Debes habilitar manualmente los permisos de Bluetooth para poder buscar impresoras.'
+                            : 'Otorga los permisos de Bluetooth para detectar impresoras cercanas.',
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
+                    ),
+                    if (bluetooth.permissionsPermanentlyDenied)
+                      TextButton(
+                        onPressed: bluetooth.openSystemSettings,
+                        child: const Text('Abrir ajustes'),
+                      ),
+                  ],
+                ),
+              )
+            else if (!_bluetoothEnabled)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 12),
                 child: Row(
@@ -319,6 +346,11 @@ class _SeleccionPage2State extends State<SeleccionPage2> {
 
   Future<bool> _ensurePermissions({bool showWarning = false}) async {
     final granted = await bluetooth.ensurePermissions();
+    if (mounted) {
+      setState(() {
+        _permissionsGranted = granted;
+      });
+    }
     if (!granted && mounted && showWarning) {
       if (bluetooth.permissionsPermanentlyDenied) {
         _showMessage(
