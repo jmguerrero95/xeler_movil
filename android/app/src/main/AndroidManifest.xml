@@ -9,6 +9,8 @@
         android:usesPermissionFlags="neverForLocation" />
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN"
         android:usesPermissionFlags="neverForLocation" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE"
+        android:usesPermissionFlags="neverForLocation" />
 
     <application
         android:name="${applicationName}"

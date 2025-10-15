@@ -7,6 +7,7 @@ import 'dart:typed_data';
 
 import 'package:charset_converter/charset_converter.dart';
 import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
+import 'package:flutter/services.dart';
 import 'package:image/image.dart' as img;
 import 'package:meta/meta.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -21,6 +22,8 @@ class BlueThermalPrinter {
 
   static final BlueThermalPrinter instance = BlueThermalPrinter._internal();
   static bool _stateMonitoringEnabled = true;
+  static const MethodChannel _bluetoothStateChannel =
+      MethodChannel('com.example.xeler_impresora/bluetooth');
 
   @visibleForTesting
   static void configure({required bool stateMonitoringEnabled}) {
@@ -40,6 +43,7 @@ class BlueThermalPrinter {
 
   Timer? _stateTimer;
   bool? _lastConnected;
+  bool? _lastKnownBluetoothEnabled;
 
   CapabilityProfile? _profile;
   bool _permissionsPermanentlyDenied = false;
@@ -72,11 +76,26 @@ class BlueThermalPrinter {
   }
 
   Future<bool> get isBluetoothEnabled async {
+    bool? enabled;
     try {
-      return await PrintBluetoothThermal.bluetoothEnabled;
+      enabled = await PrintBluetoothThermal.bluetoothEnabled
+          .timeout(const Duration(milliseconds: 500));
     } catch (_) {
-      return false;
+      enabled = null;
     }
+
+    if (enabled == null && Platform.isAndroid) {
+      try {
+        enabled = await _bluetoothStateChannel
+            .invokeMethod<bool>('isBluetoothEnabled')
+            .timeout(const Duration(milliseconds: 500));
+      } catch (_) {
+        enabled = null;
+      }
+    }
+
+    _lastKnownBluetoothEnabled = enabled ?? _lastKnownBluetoothEnabled;
+    return _lastKnownBluetoothEnabled ?? false;
   }
 
   Future<bool> ensurePermissions() async {
@@ -86,19 +105,21 @@ class BlueThermalPrinter {
 
     _permissionsPermanentlyDenied = false;
 
+    bool requiredPermissionsGranted = true;
+
     if (Platform.isAndroid) {
       final int androidVersion = await _resolveAndroidVersion() ?? 11;
+      final bool enforceLegacyPermissions = androidVersion < 12;
 
       final List<Permission> permissions = <Permission>[
         Permission.bluetoothScan,
         Permission.bluetoothConnect,
       ];
 
-      // Android 11 and below use the legacy BLUETOOTH permission group and
-      // still need location access to discover nearby devices. When the device
-      // runs Android 12 or newer those permissions become optional and the app
-      // should not block if the user refuses them.
-      final bool enforceLegacyPermissions = androidVersion < 12;
+      if (androidVersion >= 12) {
+        permissions.add(Permission.bluetoothAdvertise);
+      }
+
       if (enforceLegacyPermissions) {
         permissions
           ..add(Permission.bluetooth)
@@ -108,27 +129,31 @@ class BlueThermalPrinter {
       final Map<Permission, PermissionStatus> statuses =
           await permissions.request();
 
-      for (final MapEntry<Permission, PermissionStatus> entry in statuses.entries) {
-        final Permission permission = entry.key;
-        final PermissionStatus status = entry.value;
+      for (final Permission permission in permissions) {
+        final PermissionStatus status =
+            statuses[permission] ?? await permission.status;
+
         if (status.isPermanentlyDenied &&
             permission != Permission.locationWhenInUse) {
           _permissionsPermanentlyDenied = true;
         }
 
-        final bool isLocationPermission =
-            permission == Permission.locationWhenInUse;
+        final bool isGranted = status.isGranted || status.isLimited;
         final bool isLegacyBluetoothPermission =
             permission == Permission.bluetooth;
-        if (!status.isGranted && !status.isLimited) {
-          if (!enforceLegacyPermissions &&
-              (isLocationPermission || isLegacyBluetoothPermission)) {
-            continue;
-          }
-          if (!isLocationPermission || enforceLegacyPermissions) {
-            return false;
-          }
+        final bool isLocationPermission =
+            permission == Permission.locationWhenInUse;
+
+        if (isGranted) {
+          continue;
         }
+
+        if (!enforceLegacyPermissions &&
+            (isLocationPermission || isLegacyBluetoothPermission)) {
+          continue;
+        }
+
+        requiredPermissionsGranted = false;
       }
     } else if (Platform.isIOS) {
       final status = await Permission.bluetooth.request();
@@ -141,9 +166,11 @@ class BlueThermalPrinter {
     }
 
     try {
-      return await PrintBluetoothThermal.isPermissionBluetoothGranted;
+      final bool pluginGranted =
+          await PrintBluetoothThermal.isPermissionBluetoothGranted;
+      return pluginGranted || requiredPermissionsGranted;
     } catch (_) {
-      return false;
+      return requiredPermissionsGranted;
     }
   }
 
