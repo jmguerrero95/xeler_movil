@@ -114,17 +114,10 @@ class BlueThermalPrinter {
       final List<Permission> permissions = <Permission>[
         Permission.bluetoothScan,
         Permission.bluetoothConnect,
+        if (androidVersion >= 12) Permission.bluetoothAdvertise,
+        Permission.locationWhenInUse,
+        if (enforceLegacyPermissions) Permission.bluetooth,
       ];
-
-      if (androidVersion >= 12) {
-        permissions.add(Permission.bluetoothAdvertise);
-      }
-
-      if (enforceLegacyPermissions) {
-        permissions
-          ..add(Permission.bluetooth)
-          ..add(Permission.locationWhenInUse);
-      }
 
       final Map<Permission, PermissionStatus> statuses =
           await permissions.request();
@@ -133,23 +126,21 @@ class BlueThermalPrinter {
         final PermissionStatus status =
             statuses[permission] ?? await permission.status;
 
-        if (status.isPermanentlyDenied &&
-            permission != Permission.locationWhenInUse) {
+        final bool isGranted = status.isGranted || status.isLimited;
+        final bool isLocationPermission =
+            permission == Permission.locationWhenInUse;
+        final bool isLegacyBluetoothPermission =
+            permission == Permission.bluetooth;
+        final bool permissionIsMandatory =
+            isLocationPermission || isLegacyBluetoothPermission
+                ? enforceLegacyPermissions
+                : true;
+
+        if (status.isPermanentlyDenied && permissionIsMandatory) {
           _permissionsPermanentlyDenied = true;
         }
 
-        final bool isGranted = status.isGranted || status.isLimited;
-        final bool isLegacyBluetoothPermission =
-            permission == Permission.bluetooth;
-        final bool isLocationPermission =
-            permission == Permission.locationWhenInUse;
-
-        if (isGranted) {
-          continue;
-        }
-
-        if (!enforceLegacyPermissions &&
-            (isLocationPermission || isLegacyBluetoothPermission)) {
+        if (isGranted || !permissionIsMandatory) {
           continue;
         }
 
@@ -166,12 +157,18 @@ class BlueThermalPrinter {
     }
 
     try {
-      final bool pluginGranted =
-          await PrintBluetoothThermal.isPermissionBluetoothGranted;
-      return pluginGranted || requiredPermissionsGranted;
+      final bool pluginGranted = await PrintBluetoothThermal
+          .isPermissionBluetoothGranted
+          .timeout(const Duration(milliseconds: 500));
+      if (pluginGranted) {
+        return true;
+      }
     } catch (_) {
-      return requiredPermissionsGranted;
+      // Ignored: the plugin is best-effort and may timeout when permissions
+      // are unavailable. We fall back to the explicit permission handler
+      // checks below.
     }
+    return requiredPermissionsGranted;
   }
 
   Future<List<BluetoothDevice>> getBondedDevices() async {
@@ -186,12 +183,15 @@ class BlueThermalPrinter {
     }
 
     try {
-      final results = await PrintBluetoothThermal.pairedBluetooths;
+      final results = await PrintBluetoothThermal.pairedBluetooths
+          .timeout(const Duration(seconds: 2));
       return results
           .map((dynamic item) => BluetoothDevice.fromDynamic(item))
           .where(
               (device) => device.address != null && device.address!.isNotEmpty)
           .toList();
+    } on TimeoutException {
+      return <BluetoothDevice>[];
     } catch (_) {
       return <BluetoothDevice>[];
     }
