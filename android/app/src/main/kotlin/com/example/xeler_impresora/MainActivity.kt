@@ -8,7 +8,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -17,13 +16,6 @@ import io.flutter.plugin.common.MethodChannel
 class MainActivity : FlutterActivity() {
 
     private var enableBluetoothResult: MethodChannel.Result? = null
-
-    private val requestEnableBluetoothLauncher =
-        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-            val enabled = isBluetoothEnabled()
-            enableBluetoothResult?.success(enabled)
-            enableBluetoothResult = null
-        }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -108,9 +100,20 @@ class MainActivity : FlutterActivity() {
         enableBluetoothResult = result
 
         try {
-            requestEnableBluetoothLauncher.launch(intent)
+            @Suppress("DEPRECATION")
+            startActivityForResult(intent, REQUEST_ENABLE_BLUETOOTH)
         } catch (_: Exception) {
             enableBluetoothResult?.success(false)
+            enableBluetoothResult = null
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQUEST_ENABLE_BLUETOOTH) {
+            val enabled = resultCode == android.app.Activity.RESULT_OK || isBluetoothEnabled()
+            enableBluetoothResult?.success(enabled)
             enableBluetoothResult = null
         }
     }
@@ -152,5 +155,6 @@ class MainActivity : FlutterActivity() {
 
     companion object {
         private const val BLUETOOTH_CHANNEL = "com.example.xeler_impresora/bluetooth"
+        private const val REQUEST_ENABLE_BLUETOOTH = 1001
     }
 }
