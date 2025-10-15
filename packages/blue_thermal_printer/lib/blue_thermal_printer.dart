@@ -1,6 +1,7 @@
 library blue_thermal_printer;
 
 import 'dart:async';
+import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -120,7 +121,10 @@ class BlueThermalPrinter {
       ];
 
       final Map<Permission, PermissionStatus> statuses =
-          await permissions.request();
+          <Permission, PermissionStatus>{};
+      for (final Permission permission in permissions) {
+        statuses[permission] = await permission.request();
+      }
 
       for (final Permission permission in permissions) {
         final PermissionStatus status =
@@ -182,19 +186,49 @@ class BlueThermalPrinter {
       return <BluetoothDevice>[];
     }
 
-    try {
-      final results = await PrintBluetoothThermal.pairedBluetooths
-          .timeout(const Duration(seconds: 2));
-      return results
-          .map((dynamic item) => BluetoothDevice.fromDynamic(item))
-          .where(
-              (device) => device.address != null && device.address!.isNotEmpty)
-          .toList();
-    } on TimeoutException {
-      return <BluetoothDevice>[];
-    } catch (_) {
-      return <BluetoothDevice>[];
+    final List<BluetoothDevice> pluginDevices =
+        await _getPluginBondedDevices();
+    final List<BluetoothDevice> nativeDevices =
+        await _getNativeBondedDevices();
+
+    final LinkedHashMap<String, BluetoothDevice> devicesByAddress =
+        LinkedHashMap<String, BluetoothDevice>();
+    final List<BluetoothDevice> devicesWithoutAddress =
+        <BluetoothDevice>[];
+
+    void addDevice(BluetoothDevice device) {
+      final String? address = device.address;
+      if (address == null || address.isEmpty) {
+        devicesWithoutAddress.add(device);
+        return;
+      }
+
+      final BluetoothDevice? existing = devicesByAddress[address];
+      if (existing == null) {
+        devicesByAddress[address] = device;
+        return;
+      }
+
+      final bool hasExistingName =
+          (existing.name != null && existing.name!.isNotEmpty);
+      final bool hasNewName = (device.name != null && device.name!.isNotEmpty);
+
+      if (!hasExistingName && hasNewName) {
+        devicesByAddress[address] = device;
+      }
     }
+
+    for (final BluetoothDevice device in pluginDevices) {
+      addDevice(device);
+    }
+    for (final BluetoothDevice device in nativeDevices) {
+      addDevice(device);
+    }
+
+    return <BluetoothDevice>[
+      ...devicesByAddress.values,
+      ...devicesWithoutAddress,
+    ];
   }
 
   Future<void> connect(BluetoothDevice device) async {
@@ -446,6 +480,52 @@ class BlueThermalPrinter {
       return Uint8List.fromList(encoded);
     } catch (_) {
       return Uint8List.fromList(const Utf8Encoder().convert(text));
+    }
+  }
+
+  Future<List<BluetoothDevice>> _getPluginBondedDevices() async {
+    try {
+      final results = await PrintBluetoothThermal.pairedBluetooths
+          .timeout(const Duration(seconds: 2));
+      return results
+          .map((dynamic item) => BluetoothDevice.fromDynamic(item))
+          .toList();
+    } on TimeoutException {
+      return <BluetoothDevice>[];
+    } catch (_) {
+      return <BluetoothDevice>[];
+    }
+  }
+
+  Future<List<BluetoothDevice>> _getNativeBondedDevices() async {
+    if (!Platform.isAndroid) {
+      return <BluetoothDevice>[];
+    }
+
+    try {
+      final List<Map<dynamic, dynamic>>? rawDevices =
+          await _bluetoothStateChannel
+              .invokeListMethod<Map<dynamic, dynamic>>('getBondedDevices')
+              .timeout(const Duration(milliseconds: 500));
+
+      if (rawDevices == null) {
+        return <BluetoothDevice>[];
+      }
+
+      return rawDevices
+          .map(
+            (Map<dynamic, dynamic> item) => BluetoothDevice.fromMap(
+              item.map(
+                (dynamic key, dynamic value) =>
+                    MapEntry<String, dynamic>(key.toString(), value),
+              ),
+            ),
+          )
+          .toList();
+    } on TimeoutException {
+      return <BluetoothDevice>[];
+    } catch (_) {
+      return <BluetoothDevice>[];
     }
   }
 }
