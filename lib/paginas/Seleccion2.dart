@@ -25,11 +25,12 @@ class _SeleccionPage2State extends State<SeleccionPage2> {
   List<BluetoothDevice> _devices = [];
   BluetoothDevice? _device;
   bool _connected = false;
-  bool _bluetoothEnabled = true;
+  bool _bluetoothEnabled = false;
   bool _loadingDevices = false;
   bool _permissionsGranted = true;
   bool _enablingBluetooth = false;
   StreamSubscription<int>? _stateSubscription;
+  StreamSubscription<bool>? _adapterSubscription;
   Map<String, dynamic>? userData;
   String? _dispositivo;
   String? _direccion;
@@ -56,6 +57,20 @@ class _SeleccionPage2State extends State<SeleccionPage2> {
           break;
       }
     });
+    _adapterSubscription =
+        bluetooth.onBluetoothEnabledChanged().listen((enabled) {
+      if (!mounted) return;
+      setState(() {
+        _bluetoothEnabled = enabled;
+        if (!enabled) {
+          _connected = false;
+          _devices = [];
+        }
+      });
+      if (enabled && !_loadingDevices) {
+        unawaited(initPlatformState());
+      }
+    });
     initPlatformState(notifyIfDenied: true);
     initSavetoPath();
     _getUserInfo();
@@ -64,6 +79,7 @@ class _SeleccionPage2State extends State<SeleccionPage2> {
   @override
   void dispose() {
     _stateSubscription?.cancel();
+    _adapterSubscription?.cancel();
     super.dispose();
   }
 
@@ -370,6 +386,15 @@ class _SeleccionPage2State extends State<SeleccionPage2> {
     if (mounted) {
       setState(() {
         _permissionsGranted = granted;
+        if (!granted) {
+          _bluetoothEnabled = false;
+          _connected = false;
+          _devices = [];
+          _device = null;
+          _dispositivo = null;
+          _direccion = null;
+          _tipo = null;
+        }
       });
     }
     if (!granted && mounted && showWarning) {
@@ -392,6 +417,10 @@ class _SeleccionPage2State extends State<SeleccionPage2> {
 
   Future<void> _requestEnableBluetooth() async {
     if (_enablingBluetooth) {
+      return;
+    }
+
+    if (!await _ensurePermissions(showWarning: true)) {
       return;
     }
 

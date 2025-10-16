@@ -41,10 +41,12 @@ class BlueThermalPrinter {
 
   final StreamController<int> _stateController =
       StreamController<int>.broadcast();
+  final StreamController<bool> _bluetoothEnabledController =
+      StreamController<bool>.broadcast();
 
   Timer? _stateTimer;
   bool? _lastConnected;
-  bool? _lastKnownBluetoothEnabled;
+  bool _lastKnownBluetoothEnabled = false;
 
   CapabilityProfile? _profile;
   bool _permissionsPermanentlyDenied = false;
@@ -56,6 +58,9 @@ class BlueThermalPrinter {
   Stream<int> onStateChanged() => _stateController.stream;
 
   bool get permissionsPermanentlyDenied => _permissionsPermanentlyDenied;
+
+  Stream<bool> onBluetoothEnabledChanged() =>
+      _bluetoothEnabledController.stream;
 
   Future<bool?> get isConnected async {
     try {
@@ -95,8 +100,8 @@ class BlueThermalPrinter {
       }
     }
 
-    _lastKnownBluetoothEnabled = enabled ?? _lastKnownBluetoothEnabled;
-    return _lastKnownBluetoothEnabled ?? false;
+    _updateBluetoothEnabledCache(enabled);
+    return _lastKnownBluetoothEnabled;
   }
 
   Future<bool> requestEnableBluetooth() async {
@@ -108,7 +113,7 @@ class BlueThermalPrinter {
       final bool? enabled = await _bluetoothStateChannel
           .invokeMethod<bool>('requestEnableBluetooth');
       if (enabled != null) {
-        _lastKnownBluetoothEnabled = enabled;
+        _updateBluetoothEnabledCache(enabled);
         return enabled;
       }
     } catch (_) {
@@ -116,7 +121,7 @@ class BlueThermalPrinter {
     }
 
     final bool fallbackEnabled = await isBluetoothEnabled;
-    _lastKnownBluetoothEnabled = fallbackEnabled;
+    _updateBluetoothEnabledCache(fallbackEnabled);
     return fallbackEnabled;
   }
 
@@ -137,9 +142,16 @@ class BlueThermalPrinter {
         Permission.bluetoothScan,
         Permission.bluetoothConnect,
         if (androidVersion >= 12) Permission.bluetoothAdvertise,
-        Permission.locationWhenInUse,
-        if (enforceLegacyPermissions) Permission.bluetooth,
       ];
+
+      if (enforceLegacyPermissions) {
+        permissions.addAll(<Permission>[
+          Permission.locationWhenInUse,
+          Permission.bluetooth,
+        ]);
+      } else {
+        permissions.add(Permission.locationWhenInUse);
+      }
 
       final Map<Permission, PermissionStatus> statuses =
           <Permission, PermissionStatus>{};
@@ -177,6 +189,7 @@ class BlueThermalPrinter {
         _permissionsPermanentlyDenied = true;
       }
       if (!status.isGranted && !status.isLimited) {
+        _updateBluetoothEnabledCache(false);
         return false;
       }
     }
@@ -185,6 +198,7 @@ class BlueThermalPrinter {
       final bool pluginGranted = await PrintBluetoothThermal
           .isPermissionBluetoothGranted
           .timeout(const Duration(milliseconds: 500));
+      _updateBluetoothEnabledCache(pluginGranted);
       if (pluginGranted) {
         return true;
       }
@@ -192,6 +206,10 @@ class BlueThermalPrinter {
       // Ignored: the plugin is best-effort and may timeout when permissions
       // are unavailable. We fall back to the explicit permission handler
       // checks below.
+    }
+
+    if (!requiredPermissionsGranted) {
+      _updateBluetoothEnabledCache(false);
     }
     return requiredPermissionsGranted;
   }
@@ -361,6 +379,7 @@ class BlueThermalPrinter {
         _lastConnected = connected;
         _stateController.add(connected ? CONNECTED : DISCONNECTED);
       }
+      await isBluetoothEnabled;
     });
   }
 
@@ -371,7 +390,12 @@ class BlueThermalPrinter {
 
   Future<void> dispose() async {
     _stopStateMonitor();
-    await _stateController.close();
+    if (!_stateController.isClosed) {
+      await _stateController.close();
+    }
+    if (!_bluetoothEnabledController.isClosed) {
+      await _bluetoothEnabledController.close();
+    }
   }
 
   Future<CapabilityProfile> _loadProfile() async {
@@ -408,6 +432,16 @@ class BlueThermalPrinter {
       throw StateError('La impresora no está conectada');
     }
     await PrintBluetoothThermal.writeBytes(Uint8List.fromList(bytes));
+  }
+
+  void _updateBluetoothEnabledCache(bool? candidate) {
+    final bool resolved = candidate ?? _lastKnownBluetoothEnabled;
+    if (_lastKnownBluetoothEnabled != resolved) {
+      if (!_bluetoothEnabledController.isClosed) {
+        _bluetoothEnabledController.add(resolved);
+      }
+    }
+    _lastKnownBluetoothEnabled = resolved;
   }
 
   Future<int?> _resolveAndroidVersion() async {
