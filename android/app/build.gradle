@@ -26,8 +26,18 @@ if (flutterVersionName == null) {
 
 android {
     namespace "com.example.xeler_impresora"
-    compileSdk flutter.compileSdkVersion
-    ndkVersion flutter.ndkVersion
+
+    def minimumCompileSdk = 35
+    compileSdk Math.max(flutter.compileSdkVersion, minimumCompileSdk)
+
+    buildToolsVersion "35.0.0"
+
+    def minimumNdkVersion = "26.1.10909125"
+    def resolvedNdkVersion = flutter.ndkVersion
+    if (resolvedNdkVersion == null || resolvedNdkVersion.compareTo(minimumNdkVersion) < 0) {
+        resolvedNdkVersion = minimumNdkVersion
+    }
+    ndkVersion resolvedNdkVersion
 
     defaultConfig {
         applicationId "com.example.xeler_impresora"

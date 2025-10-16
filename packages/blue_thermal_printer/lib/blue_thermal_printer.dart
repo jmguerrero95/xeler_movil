@@ -138,46 +138,38 @@ class BlueThermalPrinter {
       final int androidVersion = await _resolveAndroidVersion() ?? 11;
       final bool enforceLegacyPermissions = androidVersion < 12;
 
-      final List<Permission> permissions = <Permission>[
-        Permission.bluetoothScan,
-        Permission.bluetoothConnect,
-        if (androidVersion >= 12) Permission.bluetoothAdvertise,
-      ];
+      final List<MapEntry<Permission, bool>> requests =
+          <MapEntry<Permission, bool>>[];
+
+      void addRequest(Permission permission, {required bool mandatory}) {
+        requests.add(MapEntry<Permission, bool>(permission, mandatory));
+      }
+
+      addRequest(Permission.bluetoothScan, mandatory: true);
+      addRequest(Permission.bluetoothConnect, mandatory: true);
+      if (androidVersion >= 12) {
+        addRequest(Permission.bluetoothAdvertise, mandatory: false);
+      }
 
       if (enforceLegacyPermissions) {
-        permissions.addAll(<Permission>[
-          Permission.locationWhenInUse,
-          Permission.bluetooth,
-        ]);
+        addRequest(Permission.bluetooth, mandatory: true);
+        addRequest(Permission.locationWhenInUse, mandatory: true);
       } else {
-        permissions.add(Permission.locationWhenInUse);
+        addRequest(Permission.locationWhenInUse, mandatory: false);
       }
 
-      final Map<Permission, PermissionStatus> statuses =
-          <Permission, PermissionStatus>{};
-      for (final Permission permission in permissions) {
-        statuses[permission] = await permission.request();
-      }
+      for (final MapEntry<Permission, bool> request in requests) {
+        final Permission permission = request.key;
+        final bool isMandatory = request.value;
 
-      for (final Permission permission in permissions) {
-        final PermissionStatus status =
-            statuses[permission] ?? await permission.status;
-
+        final PermissionStatus status = await permission.request();
         final bool isGranted = status.isGranted || status.isLimited;
-        final bool isLocationPermission =
-            permission == Permission.locationWhenInUse;
-        final bool isLegacyBluetoothPermission =
-            permission == Permission.bluetooth;
-        final bool permissionIsMandatory =
-            isLocationPermission || isLegacyBluetoothPermission
-                ? enforceLegacyPermissions
-                : true;
 
-        if (status.isPermanentlyDenied && permissionIsMandatory) {
+        if (status.isPermanentlyDenied && isMandatory) {
           _permissionsPermanentlyDenied = true;
         }
 
-        if (isGranted || !permissionIsMandatory) {
+        if (isGranted || !isMandatory) {
           continue;
         }
 
