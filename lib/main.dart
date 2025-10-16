@@ -1,105 +1,115 @@
 import 'dart:convert';
 
 import 'package:blue_thermal_printer/blue_thermal_printer.dart';
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:xeler_impresora/paginas/Inicio.dart';
 import 'package:xeler_impresora/paginas/Login.dart';
 
-void main() => runApp(MyApp());
+void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  runApp(const MyApp());
+}
 
 class MyApp extends StatefulWidget {
-  
+  const MyApp({super.key});
+
   @override
-  _MyAppState createState() => _MyAppState();
+  State<MyApp> createState() => _MyAppState();
 }
 
 class _MyAppState extends State<MyApp> {
-  BlueThermalPrinter bluetooth = BlueThermalPrinter.instance;
+  final BlueThermalPrinter bluetooth = BlueThermalPrinter.instance;
   bool _isLoggedIn = false;
-  bool _connected = false;
-  var userData;
-  int _tipo;
-  String _dispositivo,_direccion;
-  //var myDevice = BluetoothDevice;
-  
+  Map<String, dynamic>? userData;
+  int? _tipo;
+  String? _dispositivo;
+  String? _direccion;
 
   @override
   void initState() {
-    _checkIfLoggedIn();
     super.initState();
+    _checkIfLoggedIn();
   }
 
-  void _checkIfLoggedIn() async {
-      SharedPreferences localStorage = await SharedPreferences.getInstance();
-      var token = localStorage.getString('token');
-      var userJson = localStorage.getString('user'); 
-      var user = json.decode(userJson);
-      var stringValue = user['dispositivo'].toString();
-      var stringValue2 = user['address'].toString();
-      var stringValue3 = user['tipo'];
-      if(token != null){
-        setState(() => {
-            _isLoggedIn = true,
-            userData = user,
-            _dispositivo = stringValue,
-            _direccion = stringValue2,
-            _tipo = stringValue3
-        });
-         /* setState(() {
-            _isLoggedIn = true;
-            userData = user;
-            _dispositivo = stringValue;
-            _direccion = stringValue2;
-            _tipo = stringValue3;
-         }); */
+  @override
+  void dispose() {
+    bluetooth.dispose();
+    super.dispose();
+  }
+
+  Future<void> _checkIfLoggedIn() async {
+    final localStorage = await SharedPreferences.getInstance();
+    final token = localStorage.getString('token');
+    final userJson = localStorage.getString('user');
+    if (token == null || userJson == null) {
+      if (!mounted) return;
+      setState(() {
+        _isLoggedIn = false;
+        userData = null;
+      });
+      return;
+    }
+
+    final decoded = jsonDecode(userJson) as Map<String, dynamic>;
+    final dispositivo = decoded['dispositivo']?.toString();
+    final direccion =
+        (decoded['address'] ?? decoded['direccion'])?.toString();
+    final tipoRaw = decoded['tipo'];
+
+    if (!mounted) return;
+    setState(() {
+      _isLoggedIn = true;
+      userData = decoded;
+      _dispositivo = dispositivo;
+      _direccion = direccion;
+      _tipo = tipoRaw is int ? tipoRaw : int.tryParse('$tipoRaw');
+    });
+
+    if (_direccion == null || _dispositivo == null || _tipo == null) {
+      return;
+    }
+
+    final hasPermissions = await bluetooth.ensurePermissions();
+    if (!hasPermissions) {
+      return;
+    }
+
+    final device = BluetoothDevice.fromMap({
+      'name': _dispositivo,
+      'address': _direccion,
+      'type': _tipo,
+    });
+
+    final isConnected = await bluetooth.isConnected;
+    if (isConnected != true) {
+      try {
+        await bluetooth.connect(device);
+      } catch (_) {
       }
-
-      if(_direccion != null){
-
-          final myDevice = BluetoothDevice.fromMap({
-            'name': _dispositivo,
-            'address': _direccion,
-            'type': _tipo
-        });
-
-        bluetooth.isConnected.then((isConnected) {
-          
-            if (!isConnected) {
-              
-              bluetooth.connect(myDevice).catchError((error) {
-                setState(() {
-                  _connected = false;
-                  });
-              });
-            }
-          });
-      }
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      localizationsDelegates: [                             
+      localizationsDelegates: const [
         GlobalMaterialLocalizations.delegate,
         GlobalWidgetsLocalizations.delegate,
-        DefaultCupertinoLocalizations.delegate
+        GlobalCupertinoLocalizations.delegate,
       ],
-      supportedLocales: [
-        const Locale('es'),
+      supportedLocales: const [
+        Locale('es'),
       ],
-      theme: new ThemeData(
-          primaryColor: Color.fromARGB(255, 36, 38, 80), 
-          fontFamily: 'Raleway'
+      theme: ThemeData(
+        primaryColor: const Color.fromARGB(255, 36, 38, 80),
+        fontFamily: 'Raleway',
       ),
       home: Scaffold(
-        //body: Inicio(),
-        body: _isLoggedIn ? Inicio() :  LogIn(),
+        body: _isLoggedIn ? const Inicio() : const LogIn(),
       ),
-      
     );
   }
 }

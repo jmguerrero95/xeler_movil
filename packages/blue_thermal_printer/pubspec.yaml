@@ -1,0 +1,21 @@
+name: blue_thermal_printer
+description: Compatibility wrapper around modern Bluetooth thermal printer plugins for Xeler Impresora.
+version: 2.0.0
+publish_to: none
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+  flutter: ">=3.22.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  charset_converter: ^2.0.2
+  esc_pos_utils_plus: ^2.0.4
+  meta: ^1.12.0
+  image: ^4.1.7
+  permission_handler: ^12.0.1
+  print_bluetooth_thermal: ^1.1.0
+
+dev_dependencies:
+  flutter_lints: ^3.0.2

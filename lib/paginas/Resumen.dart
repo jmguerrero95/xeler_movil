@@ -6,101 +6,96 @@ import 'package:xeler_impresora/api/api.dart';
 import 'package:xeler_impresora/model/Resumen.dart';
 
 class ResumenPage extends StatefulWidget {
+  const ResumenPage({super.key});
+
   @override
-  _ResumenPageState createState() => _ResumenPageState();
+  State<ResumenPage> createState() => _ResumenPageState();
 }
 
 class _ResumenPageState extends State<ResumenPage> {
-
-  List<Resumen> _notes = List<Resumen>();
-  List<Resumen> _notesForDisplay = List<Resumen>();
-  final formato = new NumberFormat("#,###");
-  Future<List<Resumen>> fetchNotes() async {
-    
-    //await Future.delayed(Duration(seconds: 2));
-    var response = await CallApi().getData('obtenerResumen');
-    
-    var notes = List<Resumen>();
-    
-    if (response.statusCode == 200) {
-      var notesJson = json.decode(response.body);
-      for (var noteJson in notesJson) {
-        notes.add(Resumen.fromJson(noteJson));
-      }
-    }
-    return notes;
-  }
+  final List<Resumen> _notes = [];
+  List<Resumen> _notesForDisplay = [];
+  final NumberFormat formato = NumberFormat('#,###');
 
   @override
   void initState() {
-    fetchNotes().then((value) {
-      setState(() {
-        _notes.addAll(value);
-        _notesForDisplay = _notes;
-      });
-    });
     super.initState();
+    _loadResumen();
+  }
+
+  Future<void> _loadResumen() async {
+    try {
+      final response = await CallApi().getData('obtenerResumen');
+      if (response.statusCode == 200) {
+        final List<dynamic> notesJson = jsonDecode(response.body) as List<dynamic>;
+        final notes = notesJson
+            .map((noteJson) => Resumen.fromJson(noteJson as Map<String, dynamic>))
+            .toList();
+        if (!mounted) return;
+        setState(() {
+          _notes
+            ..clear()
+            ..addAll(notes);
+          _notesForDisplay = List<Resumen>.from(_notes);
+        });
+      }
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _notesForDisplay = [];
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-        appBar: AppBar(
+      appBar: AppBar(
         automaticallyImplyLeading: false,
         centerTitle: true,
         title: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                  Image.asset(
-                 'assets/images/512xeler.png',
-                  fit: BoxFit.contain,
-                  height: 32,
-              ),
-            ],
-          ),
-      ),
-      body: SafeArea(child: DataTable(
-                    columns: [
-                      DataColumn(label: Text('Cliente')),
-                      DataColumn(label: Text('Valor')),
-                      DataColumn(label: Text('Creado')),
-                    ],
-                    rows:
-                    _notesForDisplay
-                        .map(
-                      ((element) => DataRow(
-                        cells: <DataCell>[
-                          DataCell(Text(element.cliente)),
-                          DataCell(Text(formato.format(int.parse(element.valor)))),
-                          DataCell(Text(element.creado)),
-                        ],
-                      )),
-                    )
-                        .toList(),
-                  ),),
-    );
-  }
-
-  _searchBar() {
-    return Padding(
-      padding: const EdgeInsets.all(8.0),
-      child: TextField(
-        decoration: InputDecoration(
-          hintText: 'Buscar...'
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Image.asset(
+              'assets/images/512xeler.png',
+              fit: BoxFit.contain,
+              height: 32,
+            ),
+          ],
         ),
-        onChanged: (text) {
-          text = text.toLowerCase();
-          setState(() {
-            _notesForDisplay = _notes.where((note) {
-              var noteTitle = note.cliente.toLowerCase();
-              return noteTitle.contains(text);
-            }).toList();
-          });
-        },
+      ),
+      body: SafeArea(
+        child: _notesForDisplay.isNotEmpty
+            ? SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: DataTable(
+                  columns: const [
+                    DataColumn(label: Text('Cliente')),
+                    DataColumn(label: Text('Valor')),
+                    DataColumn(label: Text('Creado')),
+                  ],
+                  rows: _notesForDisplay
+                      .map(
+                        (element) => DataRow(
+                          cells: <DataCell>[
+                            DataCell(Text(element.cliente)),
+                            DataCell(Text(
+                                formato.format(int.tryParse(element.valor) ?? 0))),
+                            DataCell(Text(element.creado)),
+                          ],
+                        ),
+                      )
+                      .toList(),
+                ),
+              )
+            : const Center(
+                child: Text(
+                  'No hay datos de resumen disponibles',
+                  style: TextStyle(fontSize: 18.0),
+                ),
+              ),
       ),
     );
   }
-
-
 }
