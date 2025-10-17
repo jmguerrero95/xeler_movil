@@ -135,45 +135,14 @@ class BlueThermalPrinter {
     bool requiredPermissionsGranted = true;
 
     if (Platform.isAndroid) {
-      final int androidVersion = await _resolveAndroidVersion() ?? 11;
-      final bool enforceLegacyPermissions = androidVersion < 12;
-
-      final List<MapEntry<Permission, bool>> requests =
-          <MapEntry<Permission, bool>>[];
-
-      void addRequest(Permission permission, {required bool mandatory}) {
-        requests.add(MapEntry<Permission, bool>(permission, mandatory));
-      }
-
-      addRequest(Permission.bluetoothScan, mandatory: true);
-      addRequest(Permission.bluetoothConnect, mandatory: true);
-      if (androidVersion >= 12) {
-        addRequest(Permission.bluetoothAdvertise, mandatory: false);
-      }
-
-      if (enforceLegacyPermissions) {
-        addRequest(Permission.bluetooth, mandatory: true);
-        addRequest(Permission.locationWhenInUse, mandatory: true);
-      } else {
-        addRequest(Permission.locationWhenInUse, mandatory: false);
-      }
-
-      for (final MapEntry<Permission, bool> request in requests) {
-        final Permission permission = request.key;
-        final bool isMandatory = request.value;
-
-        final PermissionStatus status = await permission.request();
-        final bool isGranted = status.isGranted || status.isLimited;
-
-        if (status.isPermanentlyDenied && isMandatory) {
-          _permissionsPermanentlyDenied = true;
+      final bool? nativeGranted = await _ensureAndroidPermissionsViaChannel();
+      if (nativeGranted == null) {
+        requiredPermissionsGranted = await _requestAndroidPermissionsWithHandler();
+        if (!requiredPermissionsGranted) {
+          return false;
         }
-
-        if (isGranted || !isMandatory) {
-          continue;
-        }
-
-        requiredPermissionsGranted = false;
+      } else if (!nativeGranted) {
+        return false;
       }
     } else if (Platform.isIOS) {
       final status = await Permission.bluetooth.request();
@@ -463,6 +432,84 @@ class BlueThermalPrinter {
     }
 
     return null;
+  }
+
+  /// Requests Bluetooth permissions through the native Android activity when
+  /// available. Returns `true` when all mandatory permissions are granted,
+  /// `false` when the user explicitly denied them and `null` if the native
+  /// side is unavailable or throws.
+  Future<bool?> _ensureAndroidPermissionsViaChannel() async {
+    if (!Platform.isAndroid) {
+      return null;
+    }
+    try {
+      final Map<Object?, Object?>? response =
+          await _bluetoothStateChannel.invokeMapMethod<Object?, Object?>(
+        'ensurePermissions',
+      );
+      if (response == null) {
+        return null;
+      }
+      final bool granted = response['granted'] == true;
+      final bool permanentlyDenied = response['permanentlyDenied'] == true;
+      if (permanentlyDenied) {
+        _permissionsPermanentlyDenied = true;
+      }
+      if (!granted) {
+        _updateBluetoothEnabledCache(false);
+      }
+      return granted;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Fallback permission flow using the `permission_handler` package when the
+  /// native channel is not available (e.g. during tests).
+  Future<bool> _requestAndroidPermissionsWithHandler() async {
+    final int androidVersion = await _resolveAndroidVersion() ?? 11;
+    final bool enforceLegacyPermissions = androidVersion < 12;
+
+    final List<MapEntry<Permission, bool>> requests =
+        <MapEntry<Permission, bool>>[];
+
+    void addRequest(Permission permission, {required bool mandatory}) {
+      requests.add(MapEntry<Permission, bool>(permission, mandatory));
+    }
+
+    addRequest(Permission.bluetoothScan, mandatory: true);
+    addRequest(Permission.bluetoothConnect, mandatory: true);
+    if (androidVersion >= 12) {
+      addRequest(Permission.bluetoothAdvertise, mandatory: false);
+    }
+
+    if (enforceLegacyPermissions) {
+      addRequest(Permission.bluetooth, mandatory: true);
+      addRequest(Permission.locationWhenInUse, mandatory: true);
+    } else {
+      addRequest(Permission.locationWhenInUse, mandatory: false);
+    }
+
+    bool granted = true;
+
+    for (final MapEntry<Permission, bool> request in requests) {
+      final PermissionStatus status = await request.key.request();
+      final bool isGranted = status.isGranted || status.isLimited;
+
+      if (status.isPermanentlyDenied && request.value) {
+        _permissionsPermanentlyDenied = true;
+      }
+
+      if (!isGranted && request.value) {
+        granted = false;
+      }
+    }
+
+    if (!granted) {
+      _updateBluetoothEnabledCache(false);
+    }
+
+    return granted;
   }
 
   int? _parseAndroidVersion(String? source) {
