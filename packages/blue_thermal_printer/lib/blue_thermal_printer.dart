@@ -47,6 +47,7 @@ class BlueThermalPrinter {
   Timer? _stateTimer;
   bool? _lastConnected;
   bool _lastKnownBluetoothEnabled = false;
+  bool _needsPrinterInitialization = true;
 
   CapabilityProfile? _profile;
   bool _permissionsPermanentlyDenied = false;
@@ -252,6 +253,7 @@ class BlueThermalPrinter {
     if (result != true) {
       throw Exception('No se pudo establecer la conexión');
     }
+    _needsPrinterInitialization = true;
     _stateController.add(CONNECTED);
   }
 
@@ -264,6 +266,7 @@ class BlueThermalPrinter {
         await disconnectMember();
       }
     } finally {
+      _needsPrinterInitialization = true;
       _stateController.add(DISCONNECTED);
     }
   }
@@ -338,6 +341,9 @@ class BlueThermalPrinter {
       final connected = await isConnected ?? false;
       if (_lastConnected != connected) {
         _lastConnected = connected;
+        if (!connected) {
+          _needsPrinterInitialization = true;
+        }
         _stateController.add(connected ? CONNECTED : DISCONNECTED);
       }
       await isBluetoothEnabled;
@@ -392,10 +398,29 @@ class BlueThermalPrinter {
     if (connected != true) {
       throw StateError('La impresora no está conectada');
     }
-    final bool wrote = await PrintBluetoothThermal.writeBytes(bytes);
+    List<int> payload = bytes;
+    if (_needsPrinterInitialization) {
+      final generator = await _getGenerator();
+      payload = <int>[...generator.reset(), ...bytes];
+    }
+
+    final List<int> sanitizedPayload =
+        payload.map((value) => value & 0xFF).toList(growable: false);
+
+    bool wrote = false;
+    try {
+      final dynamic result =
+          await PrintBluetoothThermal.writeBytes(sanitizedPayload);
+      wrote = result == true;
+    } catch (_) {
+      wrote = false;
+    }
+
     if (!wrote) {
+      _needsPrinterInitialization = true;
       throw Exception('No se pudo enviar datos a la impresora');
     }
+    _needsPrinterInitialization = false;
   }
 
   void _updateBluetoothEnabledCache(bool? candidate) {
