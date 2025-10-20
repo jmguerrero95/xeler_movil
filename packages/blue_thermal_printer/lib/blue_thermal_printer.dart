@@ -392,7 +392,10 @@ class BlueThermalPrinter {
     if (connected != true) {
       throw StateError('La impresora no está conectada');
     }
-    await PrintBluetoothThermal.writeBytes(Uint8List.fromList(bytes));
+    final bool wrote = await PrintBluetoothThermal.writeBytes(bytes);
+    if (!wrote) {
+      throw Exception('No se pudo enviar datos a la impresora');
+    }
   }
 
   void _updateBluetoothEnabledCache(bool? candidate) {
