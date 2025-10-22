@@ -631,7 +631,7 @@ class BlueThermalPrinter {
 
     if (size >= 10) {
       const List<int> approximatePixelHeights = <int>[
-        12, // size1 (unused by default but kept for completeness)
+        12, // size1 ≈ 12 px baseline for compact text
         16, // size2 ≈ 16 px baseline
         24,
         32,
@@ -645,7 +645,7 @@ class BlueThermalPrinter {
           ? maxIndex
           : approximatePixelHeights.length - 1;
 
-      final int defaultIndex = maxIndex >= 1 ? 1 : maxIndex;
+      final int defaultIndex = 0;
       int closestIndex = defaultIndex;
       int closestDelta =
           (approximatePixelHeights[closestIndex] - size).abs();
