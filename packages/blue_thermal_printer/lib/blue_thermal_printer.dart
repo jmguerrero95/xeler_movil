@@ -23,6 +23,8 @@ class BlueThermalPrinter {
 
   static final BlueThermalPrinter instance = BlueThermalPrinter._internal();
   static bool _stateMonitoringEnabled = true;
+  static const String _defaultCharset = 'windows-1252';
+  static const String _defaultCodeTable = 'CP1252';
   static const MethodChannel _bluetoothStateChannel =
       MethodChannel('com.example.xeler_impresora/bluetooth');
 
@@ -290,20 +292,17 @@ class BlueThermalPrinter {
     );
 
     final generator = await _getGenerator();
-    List<int> bytes;
-    if (charset != null) {
-      bytes = generator.textEncoded(
-        await _encode(text, charset),
-        styles: styles,
-        linesAfter: 0,
-      );
-    } else {
-      bytes = generator.text(
-        text,
-        styles: styles,
-        linesAfter: 0,
-      );
-    }
+    final String effectiveCharset = charset ?? _defaultCharset;
+    final Uint8List encoded = await _encode(text, effectiveCharset);
+    final String? codeTable = _codeTableForCharset(effectiveCharset);
+    final PosStyles finalStyles =
+        codeTable != null ? styles.copyWith(codeTable: codeTable) : styles;
+
+    final List<int> bytes = generator.textEncoded(
+      encoded,
+      styles: finalStyles,
+      linesAfter: 0,
+    );
     await _send(bytes);
   }
 
@@ -387,7 +386,9 @@ class BlueThermalPrinter {
 
   Future<Generator> _getGenerator() async {
     final profile = await _loadProfile();
-    return Generator(_paperSize, profile);
+    final generator = Generator(_paperSize, profile);
+    generator.setGlobalCodeTable(_defaultCodeTable);
+    return generator;
   }
 
   Future<void> _send(List<int> bytes) async {
@@ -562,6 +563,19 @@ class BlueThermalPrinter {
     return null;
   }
 
+  String? _codeTableForCharset(String charset) {
+    switch (charset.toLowerCase()) {
+      case 'windows-1252':
+      case 'cp1252':
+      case 'iso-8859-1':
+      case 'latin1':
+        return 'CP1252';
+      case 'cp437':
+        return 'CP437';
+    }
+    return null;
+  }
+
   int? _androidVersionFromApi(int api) {
     if (api >= 35) return 15;
     if (api >= 34) return 14;
@@ -601,7 +615,7 @@ class BlueThermalPrinter {
       final encoded = await CharsetConverter.encode(charset, text);
       return Uint8List.fromList(encoded);
     } catch (_) {
-      return Uint8List.fromList(const Utf8Encoder().convert(text));
+      return Uint8List.fromList(const Latin1Codec().encode(text));
     }
   }
 
