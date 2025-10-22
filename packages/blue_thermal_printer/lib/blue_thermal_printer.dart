@@ -284,11 +284,13 @@ class BlueThermalPrinter {
     int align, {
     String? charset,
   }) async {
+    final PosTextSize resolvedSize = _mapTextSize(size);
+    final int resolvedIndex = PosTextSize.values.indexOf(resolvedSize);
     final styles = PosStyles(
       align: _mapAlign(align),
-      bold: size >= 2,
-      height: _mapTextSize(size),
-      width: _mapTextSize(size),
+      bold: resolvedIndex >= 1,
+      height: resolvedSize,
+      width: resolvedSize,
     );
 
     final generator = await _getGenerator();
@@ -606,9 +608,44 @@ class BlueThermalPrinter {
     }
   }
 
+  /// Maps either the legacy size indexes (1-8) or a target height in pixels
+  /// (>= 10) to the closest ESC/POS supported [PosTextSize].
   PosTextSize _mapTextSize(int size) {
-    final int normalized = size < 1 ? 1 : size;
     final int maxIndex = PosTextSize.values.length - 1;
+
+    if (size >= 10) {
+      const List<int> approximatePixelHeights = <int>[
+        12, // size1 (unused by default but kept for completeness)
+        16, // size2 ≈ 16 px baseline
+        24,
+        32,
+        40,
+        48,
+        56,
+        64,
+      ];
+
+      final int effectiveMaxIndex = maxIndex < approximatePixelHeights.length - 1
+          ? maxIndex
+          : approximatePixelHeights.length - 1;
+
+      final int defaultIndex = maxIndex >= 1 ? 1 : maxIndex;
+      int closestIndex = defaultIndex;
+      int closestDelta =
+          (approximatePixelHeights[closestIndex] - size).abs();
+
+      for (int i = defaultIndex + 1; i <= effectiveMaxIndex; i++) {
+        final int delta = (approximatePixelHeights[i] - size).abs();
+        if (delta < closestDelta) {
+          closestDelta = delta;
+          closestIndex = i;
+        }
+      }
+
+      return PosTextSize.values[closestIndex];
+    }
+
+    final int normalized = size < 1 ? 1 : size;
     final int mappedIndex = normalized > maxIndex ? maxIndex : normalized;
     return PosTextSize.values[mappedIndex];
   }

@@ -25,48 +25,48 @@ class TestPrint {
         await bluetooth.printImage(pathImage);
         await bluetooth.printNewLine();
         await bluetooth.printNewLine();
-        await bluetooth.printCustom('Fecha: ${body['created_at']}', 1, 0);
-        await bluetooth.printCustom('Punto: $direccion', 1, 0);
-        await bluetooth.printCustom('No: XE-00000$elId', 2, 0);
+        await bluetooth.printCustom('Fecha: ${body['created_at']}', 16, 0);
+        await bluetooth.printCustom('Punto: $direccion', 16, 0);
+        await bluetooth.printCustom('No: XE-00000$elId', 24, 0);
         await bluetooth.printNewLine();
         await bluetooth.printCustom(
           body['name'].toString(),
-          2,
+          24,
           1,
           charset: 'iso-8859-1',
         );
         final valor = int.tryParse(body['valor']?.toString() ?? '0') ?? 0;
         final currency = body['currency']?.toString() ?? 'COP';
         final valorLetras = body['valor_letras']?.toString() ?? '';
-        await bluetooth.printCustom('Valor: $currency ${formato.format(valor)}', 2, 1);
+        await bluetooth.printCustom('Valor: $currency ${formato.format(valor)}', 24, 1);
         await bluetooth.printCustom(
           '($valorLetras $currency)',
-          1,
+          16,
           1,
         );
         await bluetooth.printNewLine();
         await bluetooth.printCustom(
           'PRIMEROS 3 CARACTERES DE LA WALLET Y ULTIMOS 3   CARACTERES DE LA WALLET',
-          1,
+          16,
           1,
         );
-        await bluetooth.printCustom('(${body['wallet_inicio']}) (${body['wallet_fin']})', 2, 1);
+        await bluetooth.printCustom('(${body['wallet_inicio']}) (${body['wallet_fin']})', 24, 1);
         await bluetooth.printNewLine();
         await bluetooth.printCustom(
           'Confirmo que los digitos o caracteres mencionados dentro de los parentesis mas arriba de este comprobante  coinciden con los iniciales y finales de mi monedero o wallet, y que soy el Beneficiario  final de la transaccion, a su vez entiendo que las transacciones en criptomonedas son irreversibles.',
-          1,
+          16,
           0,
           charset: 'windows-1250',
         );
         await bluetooth.printNewLine();
         await bluetooth.printNewLine();
-        await bluetooth.printCustom('Firma: _________________________________________', 1, 0);
+        await bluetooth.printCustom('Firma: _________________________________________', 16, 0);
         await bluetooth.printNewLine();
         await bluetooth.printNewLine();
         await bluetooth.printNewLine();
-        await bluetooth.printCustom('Recibe: _______________________________________', 1, 0);
+        await bluetooth.printCustom('Recibe: _______________________________________', 16, 0);
         await bluetooth.printNewLine();
-        await bluetooth.printCustom('>>>   Gracias   <<<', 2, 1);
+        await bluetooth.printCustom('>>>   Gracias   <<<', 24, 1);
         await bluetooth.printNewLine();
         await bluetooth.printNewLine();
         await bluetooth.printNewLine();
@@ -88,42 +88,42 @@ class TestPrint {
         await bluetooth.printImage(pathImage);
         await bluetooth.printNewLine();
         await bluetooth.printNewLine();
-        await bluetooth.printCustom('Fecha: $timestamp', 1, 0);
-        await bluetooth.printCustom('Punto: $direccion', 1, 0);
-        await bluetooth.printCustom('No: 45345345', 2, 0);
+        await bluetooth.printCustom('Fecha: $timestamp', 16, 0);
+        await bluetooth.printCustom('Punto: $direccion', 16, 0);
+        await bluetooth.printCustom('No: 45345345', 24, 0);
         await bluetooth.printNewLine();
-        await bluetooth.printCustom('Marcos Pinto nuevo 4', 2, 1);
-        await bluetooth.printCustom('Valor: COP 2.800.000', 2, 1);
+        await bluetooth.printCustom('Marcos Pinto nuevo 4', 24, 1);
+        await bluetooth.printCustom('Valor: COP 2.800.000', 24, 1);
         await bluetooth.printCustom(
           "(${NumberUtility.toWord('2800000', NumStrLanguage.English)})",
-          1,
+          16,
           1,
         );
         await bluetooth.printNewLine();
         await bluetooth.printCustom(
           'PRIMEROS 3 CARACTERES DE LA WALLET Y ULTIMOS 3   CARACTERES DE LA WALLET',
-          1,
+          16,
           1,
         );
-        await bluetooth.printCustom('(3ze) (254)', 2, 1);
+        await bluetooth.printCustom('(3ze) (254)', 24, 1);
         await bluetooth.printNewLine();
         const testString = ' čĆžŽšŠ-H-ščđ dígitos';
-        await bluetooth.printCustom(testString, 1, 1, charset: 'windows-852');
+        await bluetooth.printCustom(testString, 16, 1, charset: 'windows-852');
         await bluetooth.printCustom(
           'Confirmo que los dígitos o caracteres mencionados dentro de los paréntesis más arriba de este comprobante  coinciden con los iniciales y finales de mi monedero o wallet, y que soy el Beneficiario  final de la transaccion, a su vez entiendo que las transacciones en criptomonedas son irreversibles.',
-          1,
+          16,
           0,
           charset: 'windows-852',
         );
         await bluetooth.printNewLine();
         await bluetooth.printNewLine();
-        await bluetooth.printCustom('Firma: _________________________________________', 1, 0);
+        await bluetooth.printCustom('Firma: _________________________________________', 16, 0);
         await bluetooth.printNewLine();
         await bluetooth.printNewLine();
         await bluetooth.printNewLine();
-        await bluetooth.printCustom('Recibe: _______________________________________', 1, 0);
+        await bluetooth.printCustom('Recibe: _______________________________________', 16, 0);
         await bluetooth.printNewLine();
-        await bluetooth.printCustom('>>>   Gracias   <<<', 2, 1);
+        await bluetooth.printCustom('>>>   Gracias   <<<', 24, 1);
         await bluetooth.printNewLine();
         await bluetooth.printNewLine();
         await bluetooth.printNewLine();
