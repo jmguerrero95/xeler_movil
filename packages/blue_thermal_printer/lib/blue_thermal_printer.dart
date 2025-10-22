@@ -607,7 +607,10 @@ class BlueThermalPrinter {
   }
 
   PosTextSize _mapTextSize(int size) {
-    return size >= 2 ? PosTextSize.size2 : PosTextSize.size1;
+    final int normalized = size < 1 ? 1 : size;
+    final int maxIndex = PosTextSize.values.length - 1;
+    final int mappedIndex = normalized > maxIndex ? maxIndex : normalized;
+    return PosTextSize.values[mappedIndex];
   }
 
   Future<Uint8List> _encode(String text, String charset) async {
