@@ -27,6 +27,16 @@ class BlueThermalPrinter {
   static const String _defaultCodeTable = 'CP1252';
   static const MethodChannel _bluetoothStateChannel =
       MethodChannel('com.example.xeler_impresora/bluetooth');
+  static const List<PosTextSize> _supportedTextSizes = <PosTextSize>[
+    PosTextSize.size1,
+    PosTextSize.size2,
+    PosTextSize.size3,
+    PosTextSize.size4,
+    PosTextSize.size5,
+    PosTextSize.size6,
+    PosTextSize.size7,
+    PosTextSize.size8,
+  ];
 
   @visibleForTesting
   static void configure({required bool stateMonitoringEnabled}) {
@@ -285,7 +295,7 @@ class BlueThermalPrinter {
     String? charset,
   }) async {
     final PosTextSize resolvedSize = _mapTextSize(size);
-    final int resolvedIndex = PosTextSize.values.indexOf(resolvedSize);
+    final int resolvedIndex = _indexForTextSize(resolvedSize);
     final styles = PosStyles(
       align: _mapAlign(align),
       bold: resolvedIndex >= 1,
@@ -608,10 +618,16 @@ class BlueThermalPrinter {
     }
   }
 
+  int _indexForTextSize(PosTextSize size) {
+    final int index = _supportedTextSizes
+        .indexWhere((PosTextSize option) => option.value == size.value);
+    return index == -1 ? 0 : index;
+  }
+
   /// Maps either the legacy size indexes (1-8) or a target height in pixels
   /// (>= 10) to the closest ESC/POS supported [PosTextSize].
   PosTextSize _mapTextSize(int size) {
-    final int maxIndex = PosTextSize.values.length - 1;
+    final int maxIndex = _supportedTextSizes.length - 1;
 
     if (size >= 10) {
       const List<int> approximatePixelHeights = <int>[
@@ -642,12 +658,13 @@ class BlueThermalPrinter {
         }
       }
 
-      return PosTextSize.values[closestIndex];
+      return _supportedTextSizes[closestIndex];
     }
 
     final int normalized = size < 1 ? 1 : size;
-    final int mappedIndex = normalized > maxIndex ? maxIndex : normalized;
-    return PosTextSize.values[mappedIndex];
+    final int zeroBased = normalized - 1;
+    final int mappedIndex = zeroBased > maxIndex ? maxIndex : zeroBased;
+    return _supportedTextSizes[mappedIndex];
   }
 
   Future<Uint8List> _encode(String text, String charset) async {
