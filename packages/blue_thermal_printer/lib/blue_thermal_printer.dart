@@ -37,6 +37,16 @@ class BlueThermalPrinter {
     PosTextSize.size7,
     PosTextSize.size8,
   ];
+  static const List<int> _approximatePixelHeights = <int>[
+    12,
+    16,
+    24,
+    32,
+    40,
+    48,
+    56,
+    64,
+  ];
 
   @visibleForTesting
   static void configure({required bool stateMonitoringEnabled}) {
@@ -288,9 +298,12 @@ class BlueThermalPrinter {
     await _send(generator.emptyLines(1));
   }
 
+  /// Prints [text] with a target height. [size] accepts either the legacy
+  /// ESC/POS indexes (1-8), a pixel height provided as an `int`/`double`, or
+  /// a string such as "18", "18.5" or "18px".
   Future<void> printCustom(
     String text,
-    int size,
+    dynamic size,
     int align, {
     String? charset,
   }) async {
@@ -624,47 +637,135 @@ class BlueThermalPrinter {
     return index == -1 ? 0 : index;
   }
 
-  /// Maps either the legacy size indexes (1-8) or a target height in pixels
-  /// (>= 10) to the closest ESC/POS supported [PosTextSize].
-  PosTextSize _mapTextSize(int size) {
+  /// Maps either legacy size indexes (1-8) or a target height in pixels to the
+  /// closest ESC/POS supported [PosTextSize].
+  PosTextSize _mapTextSize(dynamic size) {
     final int maxIndex = _supportedTextSizes.length - 1;
 
-    if (size >= 10) {
-      const List<int> approximatePixelHeights = <int>[
-        12, // size1 ≈ 12 px baseline for compact text
-        16, // size2 ≈ 16 px baseline
-        24,
-        32,
-        40,
-        48,
-        56,
-        64,
-      ];
-
-      final int effectiveMaxIndex = maxIndex < approximatePixelHeights.length - 1
-          ? maxIndex
-          : approximatePixelHeights.length - 1;
-
-      final int defaultIndex = 0;
-      int closestIndex = defaultIndex;
-      int closestDelta =
-          (approximatePixelHeights[closestIndex] - size).abs();
-
-      for (int i = defaultIndex + 1; i <= effectiveMaxIndex; i++) {
-        final int delta = (approximatePixelHeights[i] - size).abs();
-        if (delta < closestDelta) {
-          closestDelta = delta;
-          closestIndex = i;
-        }
-      }
-
-      return _supportedTextSizes[closestIndex];
+    final double? pixelHeight = _tryParsePixelHeight(size);
+    if (pixelHeight != null) {
+      final int pixelIndex = _closestIndexForPixels(pixelHeight, maxIndex);
+      return _supportedTextSizes[pixelIndex];
     }
 
-    final int normalized = size < 1 ? 1 : size;
-    final int zeroBased = normalized - 1;
-    final int mappedIndex = zeroBased > maxIndex ? maxIndex : zeroBased;
-    return _supportedTextSizes[mappedIndex];
+    final int? legacyIndex = _tryParseLegacyIndex(size);
+    if (legacyIndex != null) {
+      final int clamped = legacyIndex < 0
+          ? 0
+          : (legacyIndex > maxIndex ? maxIndex : legacyIndex);
+      return _supportedTextSizes[clamped];
+    }
+
+    return _supportedTextSizes[0];
+  }
+
+  double? _tryParsePixelHeight(dynamic size) {
+    if (size == null) {
+      return null;
+    }
+
+    if (size is num) {
+      if (size.isNaN || size.isInfinite) {
+        return null;
+      }
+      final double numeric = size.toDouble();
+      if (numeric <= 0) {
+        return _approximatePixelHeights.first.toDouble();
+      }
+      if (numeric >= 10) {
+        return numeric;
+      }
+      if (size is double || numeric != numeric.roundToDouble()) {
+        return numeric;
+      }
+      return null;
+    }
+
+    if (size is String) {
+      final String trimmed = size.trim();
+      if (trimmed.isEmpty) {
+        return null;
+      }
+      final RegExpMatch? match =
+          RegExp(r'(-?\d+(?:[\.,]\d+)?)').firstMatch(trimmed);
+      if (match == null) {
+        return null;
+      }
+      final String numericPortion = match.group(1)!.replaceAll(',', '.');
+      final double? parsed = double.tryParse(numericPortion);
+      if (parsed == null) {
+        return null;
+      }
+      if (parsed <= 0) {
+        return _approximatePixelHeights.first.toDouble();
+      }
+      final bool hasUnit = RegExp(r'[a-zA-Z]').hasMatch(trimmed);
+      final bool hasDecimal = numericPortion.contains('.');
+      if (parsed >= 10 || hasUnit || hasDecimal) {
+        return parsed;
+      }
+      if (parsed != parsed.roundToDouble()) {
+        return parsed;
+      }
+      return null;
+    }
+
+    return null;
+  }
+
+  int? _tryParseLegacyIndex(dynamic size) {
+    if (size == null) {
+      return null;
+    }
+
+    int? value;
+    if (size is num) {
+      if (size.isNaN || size.isInfinite) {
+        return null;
+      }
+      if (size == size.roundToDouble()) {
+        value = size.toInt();
+      }
+    } else if (size is String) {
+      final String trimmed = size.trim();
+      if (RegExp(r'^[+-]?\d+$').hasMatch(trimmed)) {
+        value = int.tryParse(trimmed);
+      }
+    }
+
+    if (value == null) {
+      return null;
+    }
+
+    if (value <= 1) {
+      return 0;
+    }
+
+    return value - 1;
+  }
+
+  int _closestIndexForPixels(double pixelHeight, int maxIndex) {
+    final int effectiveMaxIndex = maxIndex < _approximatePixelHeights.length - 1
+        ? maxIndex
+        : _approximatePixelHeights.length - 1;
+
+    final double normalized =
+        pixelHeight <= 0 ? _approximatePixelHeights.first.toDouble() : pixelHeight;
+
+    int closestIndex = 0;
+    double closestDelta =
+        (normalized - _approximatePixelHeights[closestIndex]).abs();
+
+    for (int i = 1; i <= effectiveMaxIndex; i++) {
+      final double delta =
+          (normalized - _approximatePixelHeights[i]).abs();
+      if (delta < closestDelta) {
+        closestDelta = delta;
+        closestIndex = i;
+      }
+    }
+
+    return closestIndex;
   }
 
   Future<Uint8List> _encode(String text, String charset) async {
