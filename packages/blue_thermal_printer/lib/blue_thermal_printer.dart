@@ -299,8 +299,9 @@ class BlueThermalPrinter {
   }
 
   /// Prints [text] with a target height. [size] accepts either the legacy
-  /// ESC/POS indexes (1-8), a pixel height provided as an `int`/`double`, or
-  /// a string such as "18", "18.5" or "18px".
+  /// ESC/POS indexes (explicitly prefixed with `legacy:`), a [PosTextSize]
+  /// value, or a pixel height provided as an `int`/`double`/`String` such as
+  /// "18", "18.5" or "18px".
   Future<void> printCustom(
     String text,
     dynamic size,
@@ -637,10 +638,20 @@ class BlueThermalPrinter {
     return index == -1 ? 0 : index;
   }
 
-  /// Maps either legacy size indexes (1-8) or a target height in pixels to the
-  /// closest ESC/POS supported [PosTextSize].
+  /// Maps either legacy size indexes (provided explicitly via `legacy:`),
+  /// a [PosTextSize] instance, or a target height in pixels to the closest
+  /// ESC/POS supported [PosTextSize].
   PosTextSize _mapTextSize(dynamic size) {
     final int maxIndex = _supportedTextSizes.length - 1;
+
+    if (size is PosTextSize) {
+      return size;
+    }
+
+    final int? legacyIndex = _tryParseLegacyIndex(size, maxIndex);
+    if (legacyIndex != null) {
+      return _supportedTextSizes[legacyIndex];
+    }
 
     final double? pixelHeight = _tryParsePixelHeight(size);
     if (pixelHeight != null) {
@@ -648,19 +659,15 @@ class BlueThermalPrinter {
       return _supportedTextSizes[pixelIndex];
     }
 
-    final int? legacyIndex = _tryParseLegacyIndex(size);
-    if (legacyIndex != null) {
-      final int clamped = legacyIndex < 0
-          ? 0
-          : (legacyIndex > maxIndex ? maxIndex : legacyIndex);
-      return _supportedTextSizes[clamped];
-    }
-
     return _supportedTextSizes[0];
   }
 
   double? _tryParsePixelHeight(dynamic size) {
     if (size == null) {
+      return null;
+    }
+
+    if (size is PosTextSize) {
       return null;
     }
 
@@ -672,18 +679,15 @@ class BlueThermalPrinter {
       if (numeric <= 0) {
         return _approximatePixelHeights.first.toDouble();
       }
-      if (numeric >= 10) {
-        return numeric;
-      }
-      if (size is double || numeric != numeric.roundToDouble()) {
-        return numeric;
-      }
-      return null;
+      return numeric;
     }
 
     if (size is String) {
       final String trimmed = size.trim();
       if (trimmed.isEmpty) {
+        return null;
+      }
+      if (_looksLikeLegacyIndex(trimmed)) {
         return null;
       }
       final RegExpMatch? match =
@@ -699,37 +703,30 @@ class BlueThermalPrinter {
       if (parsed <= 0) {
         return _approximatePixelHeights.first.toDouble();
       }
-      final bool hasUnit = RegExp(r'[a-zA-Z]').hasMatch(trimmed);
-      final bool hasDecimal = numericPortion.contains('.');
-      if (parsed >= 10 || hasUnit || hasDecimal) {
-        return parsed;
-      }
-      if (parsed != parsed.roundToDouble()) {
-        return parsed;
-      }
-      return null;
+      return parsed;
     }
 
     return null;
   }
 
-  int? _tryParseLegacyIndex(dynamic size) {
+  int? _tryParseLegacyIndex(dynamic size, int maxIndex) {
     if (size == null) {
       return null;
     }
 
+    if (size is PosTextSize) {
+      return _indexForTextSize(size);
+    }
+
     int? value;
-    if (size is num) {
-      if (size.isNaN || size.isInfinite) {
-        return null;
-      }
-      if (size == size.roundToDouble()) {
-        value = size.toInt();
-      }
-    } else if (size is String) {
+    if (size is String) {
       final String trimmed = size.trim();
-      if (RegExp(r'^[+-]?\d+$').hasMatch(trimmed)) {
-        value = int.tryParse(trimmed);
+      final RegExpMatch? legacyMatch = RegExp(
+        r'^(?:legacy|index)\s*:?\s*(-?\d+)$',
+        caseSensitive: false,
+      ).firstMatch(trimmed);
+      if (legacyMatch != null) {
+        value = int.tryParse(legacyMatch.group(1)!);
       }
     }
 
@@ -741,7 +738,21 @@ class BlueThermalPrinter {
       return 0;
     }
 
-    return value - 1;
+    final int normalized = value - 1;
+    return normalized < 0
+        ? 0
+        : (normalized > maxIndex ? maxIndex : normalized);
+  }
+
+  bool _looksLikeLegacyIndex(String value) {
+    final RegExp legacyPattern = RegExp(
+      r'^(?:legacy|index)\s*:?\s*-?\d+$',
+      caseSensitive: false,
+    );
+    if (legacyPattern.hasMatch(value)) {
+      return true;
+    }
+    return false;
   }
 
   int _closestIndexForPixels(double pixelHeight, int maxIndex) {
