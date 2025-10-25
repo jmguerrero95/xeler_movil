@@ -23,8 +23,30 @@ class BlueThermalPrinter {
 
   static final BlueThermalPrinter instance = BlueThermalPrinter._internal();
   static bool _stateMonitoringEnabled = true;
+  static const String _defaultCharset = 'windows-1252';
+  static const String _defaultCodeTable = 'CP1252';
   static const MethodChannel _bluetoothStateChannel =
       MethodChannel('com.example.xeler_impresora/bluetooth');
+  static const List<PosTextSize> _supportedTextSizes = <PosTextSize>[
+    PosTextSize.size1,
+    PosTextSize.size2,
+    PosTextSize.size3,
+    PosTextSize.size4,
+    PosTextSize.size5,
+    PosTextSize.size6,
+    PosTextSize.size7,
+    PosTextSize.size8,
+  ];
+  static const List<int> _approximatePixelHeights = <int>[
+    12,
+    16,
+    24,
+    32,
+    40,
+    48,
+    56,
+    64,
+  ];
 
   @visibleForTesting
   static void configure({required bool stateMonitoringEnabled}) {
@@ -47,6 +69,7 @@ class BlueThermalPrinter {
   Timer? _stateTimer;
   bool? _lastConnected;
   bool _lastKnownBluetoothEnabled = false;
+  bool _needsPrinterInitialization = true;
 
   CapabilityProfile? _profile;
   bool _permissionsPermanentlyDenied = false;
@@ -135,45 +158,14 @@ class BlueThermalPrinter {
     bool requiredPermissionsGranted = true;
 
     if (Platform.isAndroid) {
-      final int androidVersion = await _resolveAndroidVersion() ?? 11;
-      final bool enforceLegacyPermissions = androidVersion < 12;
-
-      final List<MapEntry<Permission, bool>> requests =
-          <MapEntry<Permission, bool>>[];
-
-      void addRequest(Permission permission, {required bool mandatory}) {
-        requests.add(MapEntry<Permission, bool>(permission, mandatory));
-      }
-
-      addRequest(Permission.bluetoothScan, mandatory: true);
-      addRequest(Permission.bluetoothConnect, mandatory: true);
-      if (androidVersion >= 12) {
-        addRequest(Permission.bluetoothAdvertise, mandatory: false);
-      }
-
-      if (enforceLegacyPermissions) {
-        addRequest(Permission.bluetooth, mandatory: true);
-        addRequest(Permission.locationWhenInUse, mandatory: true);
-      } else {
-        addRequest(Permission.locationWhenInUse, mandatory: false);
-      }
-
-      for (final MapEntry<Permission, bool> request in requests) {
-        final Permission permission = request.key;
-        final bool isMandatory = request.value;
-
-        final PermissionStatus status = await permission.request();
-        final bool isGranted = status.isGranted || status.isLimited;
-
-        if (status.isPermanentlyDenied && isMandatory) {
-          _permissionsPermanentlyDenied = true;
+      final bool? nativeGranted = await _ensureAndroidPermissionsViaChannel();
+      if (nativeGranted == null) {
+        requiredPermissionsGranted = await _requestAndroidPermissionsWithHandler();
+        if (!requiredPermissionsGranted) {
+          return false;
         }
-
-        if (isGranted || !isMandatory) {
-          continue;
-        }
-
-        requiredPermissionsGranted = false;
+      } else if (!nativeGranted) {
+        return false;
       }
     } else if (Platform.isIOS) {
       final status = await Permission.bluetooth.request();
@@ -283,6 +275,7 @@ class BlueThermalPrinter {
     if (result != true) {
       throw Exception('No se pudo establecer la conexión');
     }
+    _needsPrinterInitialization = true;
     _stateController.add(CONNECTED);
   }
 
@@ -295,6 +288,7 @@ class BlueThermalPrinter {
         await disconnectMember();
       }
     } finally {
+      _needsPrinterInitialization = true;
       _stateController.add(DISCONNECTED);
     }
   }
@@ -304,34 +298,37 @@ class BlueThermalPrinter {
     await _send(generator.emptyLines(1));
   }
 
+  /// Prints [text] with a target height. [size] accepts either the legacy
+  /// ESC/POS indexes (explicitly prefixed with `legacy:`), a [PosTextSize]
+  /// value, or a pixel height provided as an `int`/`double`/`String` such as
+  /// "18", "18.5" or "18px".
   Future<void> printCustom(
     String text,
-    int size,
+    dynamic size,
     int align, {
     String? charset,
   }) async {
+    final PosTextSize resolvedSize = _mapTextSize(size);
+    final int resolvedIndex = _indexForTextSize(resolvedSize);
     final styles = PosStyles(
       align: _mapAlign(align),
-      bold: size >= 2,
-      height: _mapTextSize(size),
-      width: _mapTextSize(size),
+      bold: resolvedIndex >= 1,
+      height: resolvedSize,
+      width: resolvedSize,
     );
 
     final generator = await _getGenerator();
-    List<int> bytes;
-    if (charset != null) {
-      bytes = generator.textEncoded(
-        await _encode(text, charset),
-        styles: styles,
-        linesAfter: 0,
-      );
-    } else {
-      bytes = generator.text(
-        text,
-        styles: styles,
-        linesAfter: 0,
-      );
-    }
+    final String effectiveCharset = charset ?? _defaultCharset;
+    final Uint8List encoded = await _encode(text, effectiveCharset);
+    final String? codeTable = _codeTableForCharset(effectiveCharset);
+    final PosStyles finalStyles =
+        codeTable != null ? styles.copyWith(codeTable: codeTable) : styles;
+
+    final List<int> bytes = generator.textEncoded(
+      encoded,
+      styles: finalStyles,
+      linesAfter: 0,
+    );
     await _send(bytes);
   }
 
@@ -369,6 +366,9 @@ class BlueThermalPrinter {
       final connected = await isConnected ?? false;
       if (_lastConnected != connected) {
         _lastConnected = connected;
+        if (!connected) {
+          _needsPrinterInitialization = true;
+        }
         _stateController.add(connected ? CONNECTED : DISCONNECTED);
       }
       await isBluetoothEnabled;
@@ -412,7 +412,9 @@ class BlueThermalPrinter {
 
   Future<Generator> _getGenerator() async {
     final profile = await _loadProfile();
-    return Generator(_paperSize, profile);
+    final generator = Generator(_paperSize, profile);
+    generator.setGlobalCodeTable(_defaultCodeTable);
+    return generator;
   }
 
   Future<void> _send(List<int> bytes) async {
@@ -423,7 +425,29 @@ class BlueThermalPrinter {
     if (connected != true) {
       throw StateError('La impresora no está conectada');
     }
-    await PrintBluetoothThermal.writeBytes(Uint8List.fromList(bytes));
+    List<int> payload = bytes;
+    if (_needsPrinterInitialization) {
+      final generator = await _getGenerator();
+      payload = <int>[...generator.reset(), ...bytes];
+    }
+
+    final List<int> sanitizedPayload =
+        payload.map((value) => value & 0xFF).toList(growable: false);
+
+    bool wrote = false;
+    try {
+      final dynamic result =
+          await PrintBluetoothThermal.writeBytes(sanitizedPayload);
+      wrote = result == true;
+    } catch (_) {
+      wrote = false;
+    }
+
+    if (!wrote) {
+      _needsPrinterInitialization = true;
+      throw Exception('No se pudo enviar datos a la impresora');
+    }
+    _needsPrinterInitialization = false;
   }
 
   void _updateBluetoothEnabledCache(bool? candidate) {
@@ -465,6 +489,84 @@ class BlueThermalPrinter {
     return null;
   }
 
+  /// Requests Bluetooth permissions through the native Android activity when
+  /// available. Returns `true` when all mandatory permissions are granted,
+  /// `false` when the user explicitly denied them and `null` if the native
+  /// side is unavailable or throws.
+  Future<bool?> _ensureAndroidPermissionsViaChannel() async {
+    if (!Platform.isAndroid) {
+      return null;
+    }
+    try {
+      final Map<Object?, Object?>? response =
+          await _bluetoothStateChannel.invokeMapMethod<Object?, Object?>(
+        'ensurePermissions',
+      );
+      if (response == null) {
+        return null;
+      }
+      final bool granted = response['granted'] == true;
+      final bool permanentlyDenied = response['permanentlyDenied'] == true;
+      if (permanentlyDenied) {
+        _permissionsPermanentlyDenied = true;
+      }
+      if (!granted) {
+        _updateBluetoothEnabledCache(false);
+      }
+      return granted;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Fallback permission flow using the `permission_handler` package when the
+  /// native channel is not available (e.g. during tests).
+  Future<bool> _requestAndroidPermissionsWithHandler() async {
+    final int androidVersion = await _resolveAndroidVersion() ?? 11;
+    final bool enforceLegacyPermissions = androidVersion < 12;
+
+    final List<MapEntry<Permission, bool>> requests =
+        <MapEntry<Permission, bool>>[];
+
+    void addRequest(Permission permission, {required bool mandatory}) {
+      requests.add(MapEntry<Permission, bool>(permission, mandatory));
+    }
+
+    addRequest(Permission.bluetoothScan, mandatory: true);
+    addRequest(Permission.bluetoothConnect, mandatory: true);
+    if (androidVersion >= 12) {
+      addRequest(Permission.bluetoothAdvertise, mandatory: false);
+    }
+
+    if (enforceLegacyPermissions) {
+      addRequest(Permission.bluetooth, mandatory: true);
+      addRequest(Permission.locationWhenInUse, mandatory: true);
+    } else {
+      addRequest(Permission.locationWhenInUse, mandatory: false);
+    }
+
+    bool granted = true;
+
+    for (final MapEntry<Permission, bool> request in requests) {
+      final PermissionStatus status = await request.key.request();
+      final bool isGranted = status.isGranted || status.isLimited;
+
+      if (status.isPermanentlyDenied && request.value) {
+        _permissionsPermanentlyDenied = true;
+      }
+
+      if (!isGranted && request.value) {
+        granted = false;
+      }
+    }
+
+    if (!granted) {
+      _updateBluetoothEnabledCache(false);
+    }
+
+    return granted;
+  }
+
   int? _parseAndroidVersion(String? source) {
     if (source == null || source.isEmpty) {
       return null;
@@ -484,6 +586,19 @@ class BlueThermalPrinter {
       }
     }
 
+    return null;
+  }
+
+  String? _codeTableForCharset(String charset) {
+    switch (charset.toLowerCase()) {
+      case 'windows-1252':
+      case 'cp1252':
+      case 'iso-8859-1':
+      case 'latin1':
+        return 'CP1252';
+      case 'cp437':
+        return 'CP437';
+    }
     return null;
   }
 
@@ -517,8 +632,151 @@ class BlueThermalPrinter {
     }
   }
 
-  PosTextSize _mapTextSize(int size) {
-    return size >= 2 ? PosTextSize.size2 : PosTextSize.size1;
+  int _indexForTextSize(PosTextSize size) {
+    final int index = _supportedTextSizes
+        .indexWhere((PosTextSize option) => option.value == size.value);
+    return index == -1 ? 0 : index;
+  }
+
+  /// Maps either legacy size indexes (provided explicitly via `legacy:`),
+  /// a [PosTextSize] instance, or a target height in pixels to the closest
+  /// ESC/POS supported [PosTextSize].
+  PosTextSize _mapTextSize(dynamic size) {
+    final int maxIndex = _supportedTextSizes.length - 1;
+
+    if (size is PosTextSize) {
+      return size;
+    }
+
+    final int? legacyIndex = _tryParseLegacyIndex(size, maxIndex);
+    if (legacyIndex != null) {
+      return _supportedTextSizes[legacyIndex];
+    }
+
+    final double? pixelHeight = _tryParsePixelHeight(size);
+    if (pixelHeight != null) {
+      final int pixelIndex = _closestIndexForPixels(pixelHeight, maxIndex);
+      return _supportedTextSizes[pixelIndex];
+    }
+
+    return _supportedTextSizes[0];
+  }
+
+  double? _tryParsePixelHeight(dynamic size) {
+    if (size == null) {
+      return null;
+    }
+
+    if (size is PosTextSize) {
+      return null;
+    }
+
+    if (size is num) {
+      if (size.isNaN || size.isInfinite) {
+        return null;
+      }
+      final double numeric = size.toDouble();
+      if (numeric <= 0) {
+        return _approximatePixelHeights.first.toDouble();
+      }
+      return numeric;
+    }
+
+    if (size is String) {
+      final String trimmed = size.trim();
+      if (trimmed.isEmpty) {
+        return null;
+      }
+      if (_looksLikeLegacyIndex(trimmed)) {
+        return null;
+      }
+      final RegExpMatch? match =
+          RegExp(r'(-?\d+(?:[\.,]\d+)?)').firstMatch(trimmed);
+      if (match == null) {
+        return null;
+      }
+      final String numericPortion = match.group(1)!.replaceAll(',', '.');
+      final double? parsed = double.tryParse(numericPortion);
+      if (parsed == null) {
+        return null;
+      }
+      if (parsed <= 0) {
+        return _approximatePixelHeights.first.toDouble();
+      }
+      return parsed;
+    }
+
+    return null;
+  }
+
+  int? _tryParseLegacyIndex(dynamic size, int maxIndex) {
+    if (size == null) {
+      return null;
+    }
+
+    if (size is PosTextSize) {
+      return _indexForTextSize(size);
+    }
+
+    int? value;
+    if (size is String) {
+      final String trimmed = size.trim();
+      final RegExpMatch? legacyMatch = RegExp(
+        r'^(?:legacy|index)\s*:?\s*(-?\d+)$',
+        caseSensitive: false,
+      ).firstMatch(trimmed);
+      if (legacyMatch != null) {
+        value = int.tryParse(legacyMatch.group(1)!);
+      }
+    }
+
+    if (value == null) {
+      return null;
+    }
+
+    if (value <= 1) {
+      return 0;
+    }
+
+    final int normalized = value - 1;
+    return normalized < 0
+        ? 0
+        : (normalized > maxIndex ? maxIndex : normalized);
+  }
+
+  bool _looksLikeLegacyIndex(String value) {
+    final RegExp legacyPattern = RegExp(
+      r'^(?:legacy|index)\s*:?\s*-?\d+$',
+      caseSensitive: false,
+    );
+    if (legacyPattern.hasMatch(value)) {
+      return true;
+    }
+    return false;
+  }
+
+  int _closestIndexForPixels(double pixelHeight, int maxIndex) {
+    final int effectiveMaxIndex = maxIndex < _approximatePixelHeights.length - 1
+        ? maxIndex
+        : _approximatePixelHeights.length - 1;
+
+    final double normalized =
+        pixelHeight <= 0 ? _approximatePixelHeights.first.toDouble() : pixelHeight;
+
+    int closestIndex = 0;
+    double closestDelta =
+        (normalized - _approximatePixelHeights[closestIndex]).abs();
+
+    for (int i = 1; i <= effectiveMaxIndex; i++) {
+      final double delta =
+          (normalized - _approximatePixelHeights[i]).abs();
+      if (delta < closestDelta) {
+        closestDelta = delta;
+        closestIndex = i;
+      }
+    }
+
+    return closestIndex;
   }
 
   Future<Uint8List> _encode(String text, String charset) async {
@@ -526,7 +784,7 @@ class BlueThermalPrinter {
       final encoded = await CharsetConverter.encode(charset, text);
       return Uint8List.fromList(encoded);
     } catch (_) {
-      return Uint8List.fromList(const Utf8Encoder().convert(text));
+      return Uint8List.fromList(const Latin1Codec().encode(text));
     }
   }
 
